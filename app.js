@@ -501,7 +501,11 @@
         place.pinchDist = d; return;
       }
       if (place.downXY) place.moved = Math.max(place.moved, Math.hypot(e.clientX - place.downXY.x, e.clientY - place.downXY.y));
-      if (place.moved > 6 && place.view) {
+      // 12px, not 6: a real finger has more jitter than a mouse, and at 6px a
+      // genuine tap could get misread as a micro-pan, silently swallowing the
+      // intended placement/selection (this was the "finicky" mystery-plant
+      // placement — not a false pan, but a legit tap failing to register).
+      if (place.moved > 12 && place.view) {
         place.panning = true; el.placeMap.classList.add("grabbing");
         var rect = el.placeMap.getBoundingClientRect();
         var scale = Math.min(rect.width / place.view.w, rect.height / place.view.h);
@@ -677,23 +681,26 @@
     renderZoneLabels(); // must run last: labels are appended after pins so they paint on top
   }
 
-  // Zone name labels — always on, one per zone, positioned at the bbox
-  // centroid of that zone's regions, appended after pins so they paint on
-  // top. Kept a FIXED screen size regardless of zoom: font-size stays at
-  // ZONE_LABEL_PX, and a counter-scale transform (updated on every pan/zoom
-  // via repositionZoneLabels) cancels out the viewBox's own zoom factor.
+  // Zone name labels — always on, one per zone, appended after pins so they
+  // paint on top. Anchor point is picked per-zone (not a naive union-bbox
+  // center): the largest member region is preferred, and its bbox-center is
+  // verified with isPointInFill() so a concave/odd-shaped bed doesn't strand
+  // the label in empty space between regions. Falls back to a small grid
+  // search within that region if its exact center happens to miss the fill.
   var ZONE_LABEL_PX = 11; // adjust if this reads too big/small on the phone
   function renderZoneLabels() {
     Object.values(place.zoneLabelEls || {}).forEach(function (t) { t.remove(); });
     place.zoneLabelEls = {};
     place.zoneLabelPos = {};
     if (!place.snapshot) return;
-    var centroids = zoneCentroids();
-    Object.keys(centroids).forEach(function (zid) {
+    var zoneIds = {};
+    place.snapshot.regions.forEach(function (r) { if (r.zone_id) zoneIds[r.zone_id] = true; });
+    Object.keys(zoneIds).forEach(function (zid) {
       var name = state.names.zones[zid];
       if (!name) return;
-      var c = centroids[zid];
-      place.zoneLabelPos[zid] = c;
+      var anchor = zoneLabelAnchor(zid);
+      if (!anchor) return;
+      place.zoneLabelPos[zid] = anchor;
       var t = document.createElementNS(SVGNS, "text");
       t.setAttribute("font-size", ZONE_LABEL_PX);
       t.setAttribute("text-anchor", "middle");
@@ -703,6 +710,44 @@
       place.zoneLabelEls[zid] = t;
     });
     repositionZoneLabels();
+  }
+
+  function zoneLabelAnchor(zoneId) {
+    var candidates = place.snapshot.regions
+      .filter(function (r) { return r.zone_id === zoneId; })
+      .map(function (r) {
+        var shape = place.regionEls[r.id];
+        if (!shape) return null;
+        var b = shape.getBBox();
+        return { shape: shape, area: b.width * b.height, cx: b.x + b.width / 2, cy: b.y + b.height / 2, b: b };
+      })
+      .filter(Boolean)
+      .sort(function (a, b2) { return b2.area - a.area; }); // largest region first
+    if (!candidates.length) return null;
+
+    for (var i = 0; i < candidates.length; i++) {
+      var c = candidates[i];
+      if (pointInShape(c.shape, c.cx, c.cy)) return { x: c.cx, y: c.cy };
+    }
+    // Every region's own bbox-center missed its fill (concave shape) — grid-
+    // search the largest region for any point that actually lands inside it.
+    var big = candidates[0], b = big.b, steps = 7;
+    for (var sy = 1; sy < steps; sy++) {
+      for (var sx = 1; sx < steps; sx++) {
+        var px = b.x + (b.width * sx) / steps, py = b.y + (b.height * sy) / steps;
+        if (pointInShape(big.shape, px, py)) return { x: px, y: py };
+      }
+    }
+    return { x: big.cx, y: big.cy }; // last resort: better than no label at all
+  }
+
+  function pointInShape(shape, x, y) {
+    if (typeof shape.isPointInFill !== "function") return true; // test/older-env fallback
+    try {
+      var pt = el.placeMap.createSVGPoint();
+      pt.x = x; pt.y = y;
+      return shape.isPointInFill(pt);
+    } catch (e) { return true; }
   }
 
   // Recomputes each label's counter-scale transform from the current view.
