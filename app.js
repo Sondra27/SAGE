@@ -38,11 +38,17 @@
     // Place (the field map)
     placeStage: byId("place-stage"), placeEmpty: byId("place-empty"), placeMap: byId("place-map"),
     placeImportBtn: byId("place-import-btn"), placeImportFile: byId("place-import-file"),
+    placeImportZonesBtn: byId("place-import-zones-btn"), placeImportZonesFile: byId("place-import-zones-file"),
     placeImportStatus: byId("place-import-status"),
     placeFocusBtn: byId("place-focus-btn"), placeFocusLbl: byId("place-focus-lbl"),
     placeCompass: byId("place-compass"),
     placeScaleBar: byId("place-scale-bar"), placeScaleLbl: byId("place-scale-lbl"),
     placeZin: byId("place-zin"), placeZout: byId("place-zout"), placeReadout: byId("place-readout"),
+
+    // Add plant modal
+    addModal: byId("add-modal"), closeAdd: byId("close-add"), cancelAdd: byId("cancel-add"),
+    saveAdd: byId("save-add"), addZoneName: byId("add-zone-name"),
+    addLabel: byId("add-label"), addOrigin: byId("add-origin"),
   };
 
   var SECTIONS = [
@@ -62,9 +68,10 @@
   // Place: the field map. Geometry loads lazily the first time the Place tab
   // is opened (or immediately if it's already open when boot finishes).
   var place = {
-    loaded: false, loading: false, snapshot: null, view: null,
+    loading: false, snapshot: null, view: null,
     regionEls: {}, pointers: new Map(), panning: false, moved: 0,
-    downXY: null, pinchDist: 0, focused: false,
+    downXY: null, downTarget: null, downFeet: null, pinchDist: 0, focused: false,
+    pins: {}, selectedIndividualId: null, pendingZoneId: null,
   };
 
   main().catch(function (err) {
@@ -421,6 +428,8 @@
   function wirePlace() {
     el.placeImportBtn.addEventListener("click", function () { el.placeImportFile.click(); });
     el.placeImportFile.addEventListener("change", onImportFile);
+    el.placeImportZonesBtn.addEventListener("click", function () { el.placeImportZonesFile.click(); });
+    el.placeImportZonesFile.addEventListener("change", onImportZonesFile);
 
     el.placeFocusBtn.addEventListener("click", function () {
       if (!place.snapshot) return;
@@ -440,6 +449,9 @@
       place.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (place.pointers.size === 1) {
         place.panning = false; place.moved = 0; place.downXY = { x: e.clientX, y: e.clientY };
+        place.downTarget = (e.target.classList && (e.target.classList.contains("p-region") || e.target.classList.contains("p-pin")))
+          ? e.target : null;
+        place.downFeet = place.view ? placeFeetAt(e.clientX, e.clientY) : null;
       } else if (place.pointers.size === 2) {
         var p2 = Array.from(place.pointers.values());
         place.pinchDist = Math.hypot(p2[0].x - p2[1].x, p2[0].y - p2[1].y);
@@ -472,26 +484,56 @@
       if (!place.pointers.has(e.pointerId)) return;
       place.pointers.delete(e.pointerId);
       el.placeMap.classList.remove("grabbing");
-      if (place.pointers.size === 0) { place.downXY = null; place.panning = false; }
+      if (place.pointers.size === 0) {
+        if (!place.panning) onPlaceTap();
+        place.downXY = null; place.panning = false;
+      }
     }
     el.placeMap.addEventListener("pointerup", endPointer);
     el.placeMap.addEventListener("pointercancel", endPointer);
 
+    // Add-plant modal
+    el.closeAdd.addEventListener("click", closeAddModal);
+    el.cancelAdd.addEventListener("click", closeAddModal);
+    el.saveAdd.addEventListener("click", onSaveAdd);
+    el.addModal.addEventListener("mousedown", function (e) { if (e.target === el.addModal) closeAddModal(); });
+
     window.addEventListener("resize", function () { if (place.view) applyPlaceView(); });
   }
 
+  // A tap (not a drag) resolved against whatever was under the finger at
+  // pointerdown: an existing pin selects it; a region (or bare map background)
+  // opens the add-plant modal at that spot, zone auto-detected from the region.
+  function onPlaceTap() {
+    var target = place.downTarget, feet = place.downFeet;
+    place.downTarget = null;
+    if (!feet) return;
+    if (target && target.classList.contains("p-pin")) {
+      selectIndividual(target.dataset.individualId);
+      return;
+    }
+    var zoneId = (target && target.dataset.zoneId) ? target.dataset.zoneId : null;
+    openAddModal(feet, zoneId);
+  }
+
   async function ensurePlaceLoaded() {
-    if (!sage || place.loaded || place.loading) return;
+    if (!sage || place.loading) return;
     place.loading = true;
     try {
       var snapshot = await sage.getMapData();
       place.snapshot = (snapshot && Array.isArray(snapshot.regions) && snapshot.regions.length) ? snapshot : null;
-      if (place.snapshot) buildPlaceSVG(place.snapshot);
+      if (place.snapshot) { buildPlaceSVG(place.snapshot); await renderPins(); }
       showPlaceEmpty(!place.snapshot);
-      place.loaded = true;
+      await refreshZoneImportVisibility();
     } finally {
       place.loading = false;
     }
+  }
+
+  async function refreshZoneImportVisibility() {
+    if (!place.snapshot) { el.placeImportZonesBtn.hidden = true; return; }
+    var zones = await sage.query({ entity: "zones" });
+    el.placeImportZonesBtn.hidden = zones.length > 0;
   }
 
   function showPlaceEmpty(isEmpty) {
@@ -533,6 +575,73 @@
     if (rose) rose.setAttribute("transform", "rotate(" + (snapshot.northOffset || 0) + " 32 32)");
 
     applyPlaceView();
+  }
+
+  // ── Place: individual pins ──────────────────────────────────────────────────────
+  async function renderPins() {
+    Object.values(place.pins).forEach(function (el2) { el2.remove(); });
+    place.pins = {};
+    var inds = await sage.listIndividuals();
+    inds.forEach(function (ind) {
+      placeIndCache[ind.id] = ind.label || (ind.taxon_id ? "plant" : "mystery plant");
+      if (ind.map_x == null || ind.map_y == null) return;
+      var pin = document.createElementNS(SVGNS, "circle");
+      pin.setAttribute("cx", ind.map_x); pin.setAttribute("cy", ind.map_y); pin.setAttribute("r", "1.1");
+      pin.setAttribute("class", "p-pin" + (ind.taxon_id ? "" : " mystery"));
+      pin.dataset.individualId = ind.id;
+      el.placeMap.appendChild(pin);
+      place.pins[ind.id] = pin;
+    });
+    if (place.selectedIndividualId && !place.pins[place.selectedIndividualId]) place.selectedIndividualId = null;
+    markPinSelected();
+  }
+  function markPinSelected() {
+    Object.keys(place.pins).forEach(function (id) {
+      place.pins[id].classList.toggle("sel", id === place.selectedIndividualId);
+    });
+  }
+  function selectIndividual(id) {
+    place.selectedIndividualId = id;
+    markPinSelected();
+    showPlaceReadout(individualReadoutName(id));
+  }
+  var placeIndCache = {}; // display names, refreshed each time renderPins() runs
+  function individualReadoutName(id) {
+    return placeIndCache[id] || "plant";
+  }
+  var ro2;
+  function showPlaceReadout(t) {
+    el.placeReadout.textContent = t;
+    el.placeReadout.classList.add("show");
+    clearTimeout(ro2);
+    ro2 = setTimeout(function () { el.placeReadout.classList.remove("show"); }, 2200);
+  }
+
+  // ── Place: add-plant modal (tap bare ground to drop a mystery pin) ─────────────
+  var pendingPlacement = null; // { mapX, mapY, zoneId }
+  function openAddModal(feet, zoneId) {
+    pendingPlacement = { mapX: feet.x, mapY: feet.y, zoneId: zoneId };
+    var zoneName = zoneId ? (state.names.zones[zoneId] || "zone") : "Unzoned";
+    el.addZoneName.textContent = zoneName;
+    el.addLabel.value = ""; el.addOrigin.value = "";
+    el.addModal.hidden = false;
+    el.addLabel.focus();
+  }
+  function closeAddModal() { el.addModal.hidden = true; pendingPlacement = null; }
+  async function onSaveAdd() {
+    if (!pendingPlacement) return;
+    el.saveAdd.disabled = true;
+    var ind = await sage.place({
+      mapX: pendingPlacement.mapX, mapY: pendingPlacement.mapY, zoneId: pendingPlacement.zoneId,
+      label: el.addLabel.value.trim() || null, origin: el.addOrigin.value || null,
+    });
+    placeIndCache[ind.id] = ind.label || "mystery plant";
+    state.plantCount += 1;
+    refreshLauncher();
+    el.saveAdd.disabled = false;
+    closeAddModal();
+    await renderPins();
+    selectIndividual(ind.id);
   }
 
   function applyPlaceView() {
@@ -614,10 +723,53 @@
       }
       el.placeImportBtn.disabled = true;
       await sage.saveMapData(snapshot);
-      place.loaded = false; // force a reload from what we just saved
       await ensurePlaceLoaded();
       el.placeImportBtn.disabled = false;
       el.placeImportStatus.textContent = plural(snapshot.regions.length, "region") + " imported.";
+    };
+    reader.readAsText(file);
+  }
+
+  // One-time bootstrap: your 19 real zones don't exist as rows yet, and
+  // regions don't know which zone they belong to. This creates the zone rows
+  // (each mints its own real id — data.js's client-minted-id pattern, so we
+  // never hand it one), then patches that mapping onto the already-loaded
+  // map_data snapshot's regions and saves it back. Guarded to run once — the
+  // button hides itself once any zones exist, same convention as Seed sample
+  // plants, since re-running would create duplicate zone rows.
+  async function onImportZonesFile(e) {
+    var file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !place.snapshot) return;
+    var reader = new FileReader();
+    reader.onload = async function () {
+      var zonesIn;
+      try { zonesIn = JSON.parse(reader.result); }
+      catch (err) { el.placeImportStatus.textContent = "Couldn't read that file — not valid JSON."; return; }
+      if (!Array.isArray(zonesIn) || !zonesIn.length) {
+        el.placeImportStatus.textContent = "That file doesn't look like a zones export.";
+        return;
+      }
+      el.placeImportZonesBtn.disabled = true;
+      var tempToReal = {};
+      for (var i = 0; i < zonesIn.length; i++) {
+        var z = zonesIn[i];
+        var row = await sage.addZone({ name: z.name, kind: z.kind, color: z.color, notes: z.notes || null });
+        tempToReal[z.tempId] = row.id;
+      }
+      place.snapshot.regions.forEach(function (r) { r.zone_id = null; });
+      zonesIn.forEach(function (z) {
+        var realId = tempToReal[z.tempId];
+        (z.members || []).forEach(function (regionId) {
+          var region = place.snapshot.regions.find(function (rr) { return rr.id === regionId; });
+          if (region) region.zone_id = realId;
+        });
+      });
+      await sage.saveMapData(place.snapshot);
+      await loadNames();       // so zone names resolve in the add-plant modal
+      await ensurePlaceLoaded();
+      el.placeImportZonesBtn.disabled = false;
+      el.placeImportStatus.textContent = plural(zonesIn.length, "zone") + " imported.";
     };
     reader.readAsText(file);
   }

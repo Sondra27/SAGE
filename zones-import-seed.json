@@ -1,0 +1,191 @@
+[
+  {
+    "tempId": "Z12",
+    "name": "Front Garden",
+    "kind": "Bed",
+    "color": "#c08a3e",
+    "notes": "",
+    "members": [
+      "BRICK#4"
+    ]
+  },
+  {
+    "tempId": "Z13",
+    "name": "Zone A",
+    "kind": "Bed",
+    "color": "#7fa6c4",
+    "notes": "",
+    "members": [
+      "MULCH#9"
+    ]
+  },
+  {
+    "tempId": "Z14",
+    "name": "Zone B",
+    "kind": "Bed",
+    "color": "#cf7d6a",
+    "notes": "",
+    "members": [
+      "DIRT#4"
+    ]
+  },
+  {
+    "tempId": "Z15",
+    "name": "Zone C",
+    "kind": "Bed",
+    "color": "#8bb05f",
+    "notes": "",
+    "members": [
+      "DIRT#8"
+    ]
+  },
+  {
+    "tempId": "Z16",
+    "name": "Zone D (Future)",
+    "kind": "Bed",
+    "color": "#b58ad0",
+    "notes": "",
+    "members": []
+  },
+  {
+    "tempId": "Z17",
+    "name": "Zone E",
+    "kind": "Bed",
+    "color": "#d9b25a",
+    "notes": "",
+    "members": [
+      "DIRT#2"
+    ]
+  },
+  {
+    "tempId": "Z18",
+    "name": "Zone F",
+    "kind": "Bed",
+    "color": "#5fb0a2",
+    "notes": "",
+    "members": [
+      "DIRT#3"
+    ]
+  },
+  {
+    "tempId": "Z19",
+    "name": "Zone G",
+    "kind": "Bed",
+    "color": "#d98fb0",
+    "notes": "",
+    "members": [
+      "DIRT#1"
+    ]
+  },
+  {
+    "tempId": "Z20",
+    "name": "Zone H",
+    "kind": "Bed",
+    "color": "#9a8cd0",
+    "notes": "",
+    "members": [
+      "MULCH#4"
+    ]
+  },
+  {
+    "tempId": "Z21",
+    "name": "Zone K",
+    "kind": "Bed",
+    "color": "#9bb84a",
+    "notes": "",
+    "members": [
+      "MULCH#3",
+      "DIRT#5"
+    ]
+  },
+  {
+    "tempId": "Z22",
+    "name": "Zone L",
+    "kind": "Bed",
+    "color": "#c08a3e",
+    "notes": "",
+    "members": [
+      "MULCH#7"
+    ]
+  },
+  {
+    "tempId": "Z23",
+    "name": "Hedgerow",
+    "kind": "Bed",
+    "color": "#7fa6c4",
+    "notes": "",
+    "members": [
+      "MULCH#8"
+    ]
+  },
+  {
+    "tempId": "Z24",
+    "name": "Hilltop",
+    "kind": "Bed",
+    "color": "#cf7d6a",
+    "notes": "",
+    "members": [
+      "HILLTOP GARDEN#1"
+    ]
+  },
+  {
+    "tempId": "Z25",
+    "name": "Hill Tier 1",
+    "kind": "Bed",
+    "color": "#8bb05f",
+    "notes": "",
+    "members": [
+      "TIERED BED#2"
+    ]
+  },
+  {
+    "tempId": "Z26",
+    "name": "Hill Tier 2",
+    "kind": "Bed",
+    "color": "#b58ad0",
+    "notes": "",
+    "members": [
+      "TIERED BED#1"
+    ]
+  },
+  {
+    "tempId": "Z27",
+    "name": "Hill Tier 3",
+    "kind": "Bed",
+    "color": "#d9b25a",
+    "notes": "",
+    "members": [
+      "TIERED BED#3"
+    ]
+  },
+  {
+    "tempId": "Z28",
+    "name": "Hill Tier 4",
+    "kind": "Bed",
+    "color": "#5fb0a2",
+    "notes": "",
+    "members": [
+      "TIERED BED#4"
+    ]
+  },
+  {
+    "tempId": "Z29",
+    "name": "Zone M",
+    "kind": "Bed",
+    "color": "#d98fb0",
+    "notes": "",
+    "members": [
+      "MULCH#6"
+    ]
+  },
+  {
+    "tempId": "Z30",
+    "name": "Zone N",
+    "kind": "Bed",
+    "color": "#9a8cd0",
+    "notes": "",
+    "members": [
+      "MULCH#5"
+    ]
+  }
+]

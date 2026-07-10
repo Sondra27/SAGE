@@ -145,9 +145,12 @@
     .place-stage[hidden] { display: none; }
     svg#place-map { width: 100%; height: 100%; display: block; cursor: grab; }
     svg#place-map.grabbing { cursor: grabbing; }
-    .p-region { stroke: #0c120e; stroke-width: .12; stroke-opacity: .55; vector-effect: non-scaling-stroke; }
+    .p-region { stroke: #0c120e; stroke-width: .12; stroke-opacity: .55; vector-effect: non-scaling-stroke; cursor: pointer; }
     .p-lotline { fill: none; stroke: var(--ink); stroke-width: 1.6px; vector-effect: non-scaling-stroke; opacity: .8; }
     .p-contour { fill: none; stroke: var(--ink); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 4 4; opacity: .4; }
+    .p-pin { stroke: var(--ground); stroke-width: .25; vector-effect: non-scaling-stroke; fill: var(--sage); cursor: pointer; }
+    .p-pin.mystery { fill: var(--ink-dim); stroke-dasharray: .3 .3; }
+    .p-pin.sel { stroke: var(--ink); stroke-width: .5; }
     .p-ov { position: absolute; pointer-events: none; color: var(--ink); }
     .p-compass { top: 12px; right: 14px; width: 52px; height: 52px; opacity: .9; }
     .p-scalebar { left: 14px; bottom: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; color: var(--ink-dim); }
@@ -408,6 +411,8 @@
               <div class="place-import">
                 <button id="place-import-btn" class="btn-ghost" type="button">Import map data</button>
                 <input type="file" id="place-import-file" accept="application/json,.json" hidden />
+                <button id="place-import-zones-btn" class="btn-ghost" type="button" hidden>Import zones</button>
+                <input type="file" id="place-import-zones-file" accept="application/json,.json" hidden />
                 <span class="count" id="place-import-status"></span>
               </div>
             </div>
@@ -536,6 +541,47 @@
           <div class="count">Your private garden — one account.</div>
           <div class="foot-actions">
             <button id="login-btn" class="btn-log" type="button">Sign in</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+    <!-- Add plant: tap-to-drop on Place. Mystery plant only for now — species
+         picking comes with the Library / Species profile work. -->
+    <div class="modal-backdrop" id="add-modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="add-title" style="max-width:420px">
+        <header class="modal-head">
+          <h2 id="add-title">New mystery plant</h2>
+          <button id="close-add" class="modal-x" type="button" aria-label="Close">✕</button>
+        </header>
+        <div class="modal-body">
+          <div class="field-block">
+            <div class="field-label">Zone <span class="opt" id="add-zone-name"></span></div>
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="add-label">Label <span class="opt">optional</span></label>
+            <input class="login-input" id="add-label" type="text" placeholder="e.g. spring surprise" maxlength="60" />
+          </div>
+          <div class="field-block">
+            <div class="field-label">Origin <span class="opt">optional</span></div>
+            <div class="value">
+              <select id="add-origin">
+                <option value="">—</option>
+                <option value="purchased">purchased</option>
+                <option value="seed">seed</option>
+                <option value="bulb">bulb</option>
+                <option value="runner">runner</option>
+                <option value="cutting">cutting</option>
+                <option value="division">division</option>
+                <option value="volunteer">volunteer</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <footer class="modal-foot">
+          <div class="count">Identity can be filled in later.</div>
+          <div class="foot-actions">
+            <button id="cancel-add" class="btn-ghost" type="button">Cancel</button>
+            <button id="save-add" class="btn-log" type="button">Drop pin</button>
           </div>
         </footer>
       </div>
