@@ -90,8 +90,8 @@
       display: flex; align-items: center; gap: var(--pad);
       padding: clamp(14px,3vw,22px) var(--pad); border-bottom: 1px solid var(--line);
     }
-    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
-    .compass { flex: none; width: 40px; height: 40px; color: var(--sage); }
+    .brand { display: flex; align-items: stretch; gap: 14px; min-width: 0; }
+    .compass { flex: none; width: auto; height: auto; align-self: stretch; }
     .wordmark { min-width: 0; }
     .wordmark h1 {
       font-family: var(--serif); font-weight: 900; font-size: clamp(26px, 6vw, 40px);
@@ -441,7 +441,7 @@
 
     <header class="bar">
       <div class="brand">
-        <img class="compass" src="icon.svg" width="40" height="40" alt="" />
+        <img class="compass" src="icon-mark.svg" alt="" />
         <div class="wordmark">
           <h1>SAGE</h1>
           <div class="place">Parkdale Cove · zone 3b · 23°E of N</div>
