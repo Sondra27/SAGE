@@ -428,7 +428,7 @@
   function wirePlace() {
     el.placeImportBtn.addEventListener("click", function () { el.placeImportFile.click(); });
     el.placeImportFile.addEventListener("change", onImportFile);
-    el.placeImportZonesBtn.addEventListener("click", function () { el.placeImportZonesFile.click(); });
+    el.placeImportZonesBtn.addEventListener("click", onZonesImportClick);
     el.placeImportZonesFile.addEventListener("change", onImportZonesFile);
 
     el.placeFocusBtn.addEventListener("click", function () {
@@ -531,9 +531,26 @@
   }
 
   async function refreshZoneImportVisibility() {
-    if (!place.snapshot) { el.placeImportZonesBtn.hidden = true; return; }
-    var zones = await sage.query({ entity: "zones" });
-    el.placeImportZonesBtn.hidden = zones.length > 0;
+    el.placeImportZonesBtn.hidden = !place.snapshot;
+  }
+
+  // Clicking "Import zones" checks what's already there rather than the
+  // button silently disappearing — if zones already exist, it says so and
+  // arms a second click instead of hiding the option with no explanation.
+  var zonesImportArmed = false;
+  async function onZonesImportClick() {
+    if (!place.snapshot) return;
+    if (!zonesImportArmed) {
+      var existing = await sage.query({ entity: "zones" });
+      if (existing.length) {
+        zonesImportArmed = true;
+        el.placeImportStatus.textContent =
+          plural(existing.length, "zone") + " already here — click Import zones again to add 19 more anyway.";
+        return;
+      }
+    }
+    zonesImportArmed = false;
+    el.placeImportZonesFile.click();
   }
 
   function showPlaceEmpty(isEmpty) {
@@ -769,6 +786,7 @@
       await loadNames();       // so zone names resolve in the add-plant modal
       await ensurePlaceLoaded();
       el.placeImportZonesBtn.disabled = false;
+      zonesImportArmed = false;
       el.placeImportStatus.textContent = plural(zonesIn.length, "zone") + " imported.";
     };
     reader.readAsText(file);
