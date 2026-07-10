@@ -87,11 +87,12 @@
     loading: false, snapshot: null, view: null,
     regionEls: {}, pointers: new Map(), panning: false, moved: 0,
     downXY: null, downTarget: null, downFeet: null, pinchDist: 0, focused: false,
-    pins: {}, selectedIndividualId: null, pendingZoneId: null,
-    // Log Mode (Beat 3): off by default; zoneZoomId/preZoomView track the
-    // "zoomed into a zone" sub-state so the pill/arrows know what to show
-    // and there's a single view to snap back to on exit.
-    logMode: false, zoneZoomId: null, preZoomView: null,
+    pins: {}, selectedIndividualId: null, pendingZoneId: null, zoneLabelEls: {},
+    // Log Mode (Beat 3): off by default; zoneZoomId tracks the "zoomed into
+    // a zone" sub-state so the pill/arrows/highlight know what to show.
+    // Exiting a zone deliberately does NOT restore a prior view — mid-log
+    // you may want to stay right where you are and tap a nearby plant.
+    logMode: false, zoneZoomId: null,
   };
 
   main().catch(function (err) {
@@ -682,6 +683,31 @@
     });
     if (place.selectedIndividualId && !place.pins[place.selectedIndividualId]) place.selectedIndividualId = null;
     markPinSelected();
+    renderZoneLabels(); // must run last: labels are appended after pins so they paint on top
+  }
+
+  // Zone name labels — always on, one per zone, positioned at the bbox
+  // centroid of that zone's regions. Re-appended (not just re-styled) on
+  // every call so they land after whatever pins/regions exist right now,
+  // keeping them the topmost thing on the map as pins come and go.
+  function renderZoneLabels() {
+    Object.values(place.zoneLabelEls || {}).forEach(function (t) { t.remove(); });
+    place.zoneLabelEls = {};
+    if (!place.snapshot) return;
+    var centroids = zoneCentroids();
+    Object.keys(centroids).forEach(function (zid) {
+      var name = state.names.zones[zid];
+      if (!name) return;
+      var c = centroids[zid];
+      var t = document.createElementNS(SVGNS, "text");
+      t.setAttribute("x", c.x); t.setAttribute("y", c.y);
+      t.setAttribute("font-size", "2.4");
+      t.setAttribute("text-anchor", "middle");
+      t.setAttribute("class", "p-zonelabel");
+      t.textContent = name;
+      el.placeMap.appendChild(t);
+      place.zoneLabelEls[zid] = t;
+    });
   }
   function markPinSelected() {
     Object.keys(place.pins).forEach(function (id) {
@@ -727,21 +753,32 @@
     var openModal = !opts || opts.openModal !== false;
     var bbox = zoneBBox(zoneId);
     if (!bbox) { showPlaceReadout("Zone geometry not found."); return; }
-    if (!place.zoneZoomId) place.preZoomView = { ...place.view }; // remember the way back, once
     place.zoneZoomId = zoneId;
     var zoneName = state.names.zones[zoneId] || "zone";
     showZonePill(zoneName);
+    markZoneSelected(zoneId);
     animatePlaceView(bbox);
     updateZoneArrows();
     if (openModal) openZoneModal(zoneId, zoneName);
   }
 
+  // Deliberately does NOT snap the view back — if you're mid-way through
+  // logging and spot a mystery plant nearby, you shouldn't have to pan back
+  // across the yard just because you closed the zone pill.
   function exitZoneZoom() {
-    if (place.preZoomView) animatePlaceView(place.preZoomView);
     place.zoneZoomId = null;
-    place.preZoomView = null;
+    markZoneSelected(null);
     hideZonePill();
     hideZoneArrows();
+  }
+
+  function markZoneSelected(zoneId) {
+    if (!place.snapshot) return;
+    place.snapshot.regions.forEach(function (r) {
+      var shape = place.regionEls[r.id];
+      if (!shape) return;
+      shape.classList.toggle("zone-sel", !!zoneId && r.zone_id === zoneId);
+    });
   }
 
   function showZonePill(name) {

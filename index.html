@@ -159,11 +159,18 @@
     .p-scalebar .seg.on { background: var(--ink-dim); }
 
     /* Log Mode is off by default: taps behave like Beat 2 (select / add-plant).
-       On, the stage gets a sage frame + crosshair cursor as the one "you're in
-       a logging state" cue — reusing the chrome accent, never a data color. */
+       On, a low-opacity sage wash covers the whole map — visible regardless
+       of zoom level, unlike a container-edge border which can scroll out of
+       view once you're zoomed into a zone. Reuses the chrome accent, never
+       a data color. */
     .place-stage[data-logmode] { box-shadow: inset 0 0 0 2px var(--sage); }
     .place-stage[data-logmode] svg#place-map { cursor: crosshair; }
     .place-stage[data-logmode] svg#place-map.grabbing { cursor: grabbing; }
+    .p-logtint {
+      position: absolute; inset: 0; pointer-events: none; background: var(--sage);
+      opacity: 0; transition: opacity .15s ease;
+    }
+    .place-stage[data-logmode] .p-logtint { opacity: .13; }
 
     .p-toolbar { position: absolute; left: 14px; top: 12px; display: flex; gap: 8px; pointer-events: none; }
     .p-focusbtn, .p-logbtn {
@@ -176,10 +183,11 @@
     .p-logbtn[aria-pressed="true"] { background: var(--sage); color: var(--ground); border-color: var(--sage); }
     .p-logbtn[aria-pressed="true"] .dot { background: var(--ground); }
 
-    /* Zone pill: persistent while zoomed into a zone (Log Mode). Sits top-
-       center — the one spot the compass/toolbar don't already occupy. */
+    /* Zone pill: persistent while zoomed into a zone (Log Mode). Sits just
+       below the toolbar, left-aligned — top-center collided with the
+       Focus/Log Mode buttons on a phone-width screen. */
     .p-zonepill {
-      top: 12px; left: 50%; transform: translateX(-50%); pointer-events: auto;
+      top: 56px; left: 14px; pointer-events: auto;
       display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px;
       background: var(--ground-2); border: 1px solid var(--sage); border-radius: 20px;
       font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--ink); white-space: nowrap;
@@ -207,6 +215,20 @@
     .p-zonearrow.dir-down  { bottom: 56px; left: 50%; transform: translateX(-50%); }
     .p-zonearrow.dir-left  { left: 14px; top: 50%; transform: translateY(-50%); }
     .p-zonearrow.dir-right { right: 14px; top: 50%; transform: translateY(-50%); }
+
+    /* Zone selection highlight: the zoomed-into zone's own regions get a
+       touch of transparency + a sage border — a visual echo of the pin's
+       .sel treatment, scoped to whichever zone Log Mode has zoomed into. */
+    .p-region.zone-sel { opacity: .72; stroke: var(--sage); stroke-width: .35; }
+
+    /* Zone name labels: always-on, muted site-plan lettering, painted above
+       every region AND every pin (appended last in DOM order each render).
+       Sized in map-feet units on purpose — like a real site plan, label size
+       scales with zoom instead of staying a fixed screen size. */
+    .p-zonelabel {
+      font-family: var(--mono); letter-spacing: .02em; text-transform: uppercase;
+      fill: var(--ink); fill-opacity: .5; pointer-events: none;
+    }
     .p-viewctl { position: absolute; right: 14px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
     .p-viewctl button {
       pointer-events: auto; cursor: pointer; width: 34px; height: 34px; font-family: var(--mono); font-size: 17px;
@@ -464,6 +486,7 @@
             </div>
             <div class="place-stage" id="place-stage" hidden>
               <svg id="place-map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+              <div class="p-logtint" aria-hidden="true"></div>
               <div class="p-toolbar">
                 <button class="p-focusbtn" id="place-focus-btn" type="button">
                   <span class="dot"></span><span id="place-focus-lbl">Focus garden</span>
