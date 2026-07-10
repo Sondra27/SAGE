@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#16211b" />
+  <title>SAGE · Parkdale Cove</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon.svg" type="image/svg+xml" />
+
+  <!-- Playfair Display stands in for Walbaum Display until Walbaum is self-hosted.
+       Everything degrades to Georgia if the network is absent (field use). -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;900&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Design Rules, baked in ──────────────────────────────────────────────
+       Chrome is muted forest + cream, per the chrome-vs-data principle:
+       saturated colour is reserved for plant / bloom / wildlife DATA and never
+       spent on UI. These tokens are all earth-desaturated on purpose. ------- */
+    :root {
+      --ground:    #16211b;   /* deep-forest ground                          */
+      --ground-2:  #1b2a22;   /* lifted panel                                */
+      --frame:     #2f4034;   /* forest-green sheet frame                    */
+      --line:      #34453a;   /* drafting hairline                           */
+      --ink:       #ece5d3;   /* cream — text only                           */
+      --ink-dim:   #9aa588;   /* sage-grey secondary text                    */
+      --sage:      #859173;   /* muted sage — the one chrome accent (hover/on)*/
+      --bark:      #5a5145;   /* rare warm-dark earth accent                 */
+      --clay:      #d8b48a;   /* muted clay — used only for a warning line    */
+
+      /* DATA colours — the ONE place saturated hue is allowed (chrome-vs-data).
+         Reserved for observation kinds; chrome above stays muted. ----------- */
+      --k-bloom:   #df6fa1;   --k-size:  #8bc34a;   --k-status: #3fb9a3;
+      --k-pest:    #e2953f;   --k-fruit: #d75f5f;   --k-note:   #9aa588;
+
+      --serif: "Walbaum Display","Playfair Display",Georgia,"Times New Roman",serif;
+      --sans:  "Aptos","Carlito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+      --mono:  "Aptos Mono",ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+
+      --pad: clamp(16px, 4vw, 32px);
+      --sheet-max: 1400px;
+
+      /* Material palette (baked 2026-07-01) — the ONLY other place saturated-
+         adjacent color lives; still earth/stone tones, not chrome accents. */
+      --mat-lawn:#859173; --mat-mulch:#bfb6a6; --mat-dirt:#877d73; --mat-gardensoil:#87827d;
+      --mat-concrete:#bcb8ac; --mat-driveway:#cfcbc4; --mat-house:#7d735f; --mat-structure:#7d735f;
+      --mat-wood:#8a7a66; --mat-brick:#969696; --mat-limestone:#ddd7c5; --mat-riverstone:#d2d2c8;
+      --mat-flagstone:#959189; --mat-boulder:#969696; --mat-planting:#5c6e3d; --mat-hillslope:#cecbbb;
+      --mat-stonesteps:#a89a7d; --mat-firepit:#34302c; --mat-gravel:#b0a892;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--ground);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 16px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+      min-height: 100dvh;
+    }
+
+    /* The whole app is a drawing sheet: a thin double rule, like a site plan. */
+    .sheet {
+      max-width: var(--sheet-max);
+      min-height: 100dvh;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      background: var(--ground);
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      box-shadow: 0 0 0 1px var(--frame) inset;
+      animation: sheet-in .5s ease both;
+    }
+    @keyframes sheet-in { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ── App bar ───────────────────────────────────────────────────────────── */
+    .bar {
+      display: flex; align-items: center; gap: var(--pad);
+      padding: clamp(14px,3vw,22px) var(--pad); border-bottom: 1px solid var(--line);
+    }
+    .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
+    .compass { flex: none; width: 40px; height: 40px; color: var(--sage); }
+    .wordmark { min-width: 0; }
+    .wordmark h1 {
+      font-family: var(--serif); font-weight: 900; font-size: clamp(26px, 6vw, 40px);
+      letter-spacing: .04em; line-height: .95; margin: 0; color: var(--ink);
+    }
+    .wordmark .place {
+      font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase;
+      color: var(--ink-dim); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Field / Desktop segmented toggle */
+    .modes { margin-left: auto; display: flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
+    .modes button {
+      appearance: none; background: transparent; color: var(--ink-dim);
+      font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
+      padding: 9px 16px; border: 0; cursor: pointer; transition: color .15s ease, background .15s ease;
+    }
+    .modes button + button { border-left: 1px solid var(--line); }
+    .modes button:hover { color: var(--ink); }
+    .modes button[aria-selected="true"] { background: var(--sage); color: var(--ground); }
+
+    /* ── Main / mode surfaces ────────────────────────────────────────────────── */
+    main { flex: 1; padding: var(--pad); display: flex; }
+    .surface { flex: 1; display: none; flex-direction: column; }
+    .surface[data-active] { display: flex; animation: fade-in .25s ease both; }
+    @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .subnav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 26px; }
+    .subnav button {
+      appearance: none; cursor: pointer; background: transparent;
+      font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
+      padding: 7px 13px; color: var(--ink-dim); border: 1px dashed var(--line); border-radius: 2px;
+      transition: color .15s ease, border-color .15s ease;
+    }
+    .subnav button:hover { color: var(--ink); }
+    .subnav button[aria-current="true"] { color: var(--ground); background: var(--sage); border: 1px solid var(--sage); }
+    .field-panel { display: none; flex-direction: column; min-height: 0; }
+    .field-panel[data-active] { display: flex; }
+    .field-panel.grow { flex: 1; }
+
+    /* ── Place: the field map ─────────────────────────────────────────────── */
+    .place-wrap { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
+    .place-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .place-head .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--sage); }
+    .place-import { display: flex; align-items: center; gap: 10px; }
+    .place-empty {
+      flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
+      gap: 14px; max-width: 46ch; color: var(--ink-dim);
+    }
+    .place-empty[hidden] { display: none; }
+    .place-stage {
+      position: relative; flex: 1; min-height: 360px; border: 1px solid var(--line); border-radius: 4px;
+      overflow: hidden; touch-action: none;
+      background: radial-gradient(120% 90% at 50% 0%, #1c2a1f 0%, var(--ground) 60%, #131d17 100%);
+    }
+    .place-stage[hidden] { display: none; }
+    svg#place-map { width: 100%; height: 100%; display: block; cursor: grab; }
+    svg#place-map.grabbing { cursor: grabbing; }
+    .p-region { stroke: #0c120e; stroke-width: .12; stroke-opacity: .55; vector-effect: non-scaling-stroke; }
+    .p-lotline { fill: none; stroke: var(--ink); stroke-width: 1.6px; vector-effect: non-scaling-stroke; opacity: .8; }
+    .p-contour { fill: none; stroke: var(--ink); stroke-width: 1px; vector-effect: non-scaling-stroke; stroke-dasharray: 4 4; opacity: .4; }
+    .p-ov { position: absolute; pointer-events: none; color: var(--ink); }
+    .p-compass { top: 12px; right: 14px; width: 52px; height: 52px; opacity: .9; }
+    .p-scalebar { left: 14px; bottom: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; color: var(--ink-dim); }
+    .p-scalebar .bar { display: flex; height: 6px; margin-top: 3px; border: 1px solid var(--ink-dim); width: max-content; }
+    .p-scalebar .seg { height: 100%; }
+    .p-scalebar .seg.on { background: var(--ink-dim); }
+    .p-focusbtn {
+      position: absolute; left: 14px; top: 12px; pointer-events: auto; cursor: pointer;
+      display: flex; align-items: center; gap: 7px; padding: 8px 13px; font-family: var(--mono);
+      font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
+      background: var(--ground-2); color: var(--ink); border: 1px solid var(--line); border-radius: 20px;
+    }
+    .p-focusbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
+    .p-viewctl { position: absolute; right: 14px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
+    .p-viewctl button {
+      pointer-events: auto; cursor: pointer; width: 34px; height: 34px; font-family: var(--mono); font-size: 17px;
+      line-height: 1; background: var(--ground-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+    }
+    .p-readout {
+      position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); pointer-events: none;
+      background: var(--ground-2); border: 1px solid var(--line); border-radius: 20px; padding: 5px 14px;
+      font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--ink); opacity: 0;
+      transition: opacity .2s ease; white-space: nowrap;
+    }
+    .p-readout.show { opacity: 1; }
+
+    /* ── Field: Capture launcher ─────────────────────────────────────────────── */
+    .capture-launch { display: flex; flex-direction: column; gap: 20px; max-width: 560px; align-items: flex-start; }
+    .cap-head { display: flex; flex-direction: column; gap: 8px; }
+    .cap-head .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--sage); }
+    .cap-head h2 { font-family: var(--serif); font-weight: 700; font-size: clamp(22px,5vw,30px); margin: 0; color: var(--ink); }
+    .cap-head p { margin: 0; color: var(--ink-dim); max-width: 46ch; }
+    .launch-meta { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-dim); }
+
+    /* ── Shared form bits (used inside the modal) ────────────────────────────── */
+    .field-block { display: flex; flex-direction: column; gap: 11px; }
+    .field-label { font-family: var(--mono); font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--sage); }
+    .field-label .opt { color: var(--ink-dim); text-transform: none; letter-spacing: .04em; margin-left: 8px; }
+
+    .subjects { display: flex; flex-direction: column; gap: 8px; }
+    .subject {
+      text-align: left; appearance: none; cursor: pointer; background: var(--ground); color: var(--ink);
+      border: 1px solid var(--line); border-radius: 3px; padding: 12px 14px; font-family: var(--sans); font-size: 15px;
+      display: flex; flex-direction: column; gap: 3px; transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .subject:hover { border-color: var(--sage); }
+    .subject[aria-pressed="true"] { border-color: var(--sage); box-shadow: 0 0 0 1px var(--sage) inset; }
+    .subject .sub-name { font-weight: 600; }
+    .subject .sub-meta { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--ink-dim); }
+
+    .value { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .value .dim-label { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim); }
+    .opt-chip {
+      appearance: none; cursor: pointer; background: var(--ground); color: var(--ink);
+      border: 1px solid var(--line); border-radius: 2px; padding: 10px 14px; font-family: var(--sans); font-size: 14px;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .opt-chip:hover { border-color: var(--sage); }
+    .opt-chip[aria-pressed="true"] { border-color: var(--sage); box-shadow: 0 0 0 1px var(--sage) inset; }
+
+    .value input[type="number"], .value input[type="text"], .value select, .value textarea {
+      background: var(--ground); color: var(--ink); border: 1px solid var(--line); border-radius: 3px;
+      padding: 11px 12px; font-family: var(--sans); font-size: 15px;
+    }
+    .value input[type="number"] { width: 96px; }
+    .value input[type="text"] { flex: 1; min-width: 180px; }
+    .value select { min-width: 78px; }
+    .value textarea { width: 100%; resize: vertical; }
+    .value input:focus, .value select:focus, .value textarea:focus { border-color: var(--sage); outline: none; }
+
+    .flag-row { display: flex; align-items: center; gap: 10px; color: var(--ink); font-size: 14px; cursor: pointer; }
+    .flag-row input { width: 18px; height: 18px; accent-color: var(--sage); flex: none; }
+    .flag-row .opt { color: var(--ink-dim); font-family: var(--mono); font-size: 11px; letter-spacing: .04em; }
+
+    .btn-log {
+      appearance: none; cursor: pointer; background: var(--sage); color: var(--ground); border: 0; border-radius: 3px;
+      padding: 14px 26px; font-family: var(--mono); font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
+      transition: filter .15s ease;
+    }
+    .btn-log:hover { filter: brightness(1.08); }
+    .btn-log:active { filter: brightness(.95); }
+    .btn-ghost {
+      appearance: none; cursor: pointer; background: transparent; color: var(--ink-dim);
+      border: 1px solid var(--line); border-radius: 3px; padding: 14px 22px;
+      font-family: var(--mono); font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
+      transition: color .15s ease, border-color .15s ease;
+    }
+    .btn-ghost:hover { color: var(--ink); border-color: var(--sage); }
+    .confirm { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--sage); }
+    .confirm.warn { color: var(--clay); }
+    .count { font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-dim); }
+
+    /* ── Capture modal ───────────────────────────────────────────────────────── */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(8,14,10,.66); z-index: 50;
+      display: flex; align-items: center; justify-content: center; padding: var(--pad);
+    }
+    .modal-backdrop[hidden] { display: none; }
+    .modal {
+      background: var(--ground-2); border: 1px solid var(--frame); border-radius: 4px;
+      width: 100%; max-width: 560px; max-height: 90dvh; display: flex; flex-direction: column;
+      box-shadow: 0 20px 60px rgba(0,0,0,.5); animation: modal-in .2s ease both;
+    }
+    @keyframes modal-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px; border-bottom: 1px solid var(--line); }
+    .modal-head h2 { font-family: var(--serif); font-weight: 700; font-size: 22px; margin: 0; color: var(--ink); }
+    .modal-x { appearance: none; background: transparent; border: 0; color: var(--ink-dim); font-size: 18px; line-height: 1; cursor: pointer; padding: 6px 8px; border-radius: 2px; }
+    .modal-x:hover { color: var(--ink); }
+    .modal-body { padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+    .modal-foot { border-top: 1px solid var(--line); padding: 16px 20px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+    .foot-actions { display: flex; gap: 10px; margin-left: auto; }
+
+    .login-input {
+      background: var(--ground); color: var(--ink); border: 1px solid var(--line); border-radius: 3px;
+      padding: 12px 12px; font-family: var(--sans); font-size: 15px; width: 100%;
+    }
+    .login-input:focus { border-color: var(--sage); outline: none; }
+    .linkbtn {
+      appearance: none; background: transparent; border: 0; cursor: pointer; color: var(--ink-dim);
+      font-family: var(--mono); font-size: 11px; letter-spacing: .08em; text-decoration: underline; padding: 0;
+    }
+    .linkbtn:hover { color: var(--ink); }
+
+    .obs-sections { display: flex; flex-direction: column; gap: 20px; }
+    .obs { display: flex; flex-direction: column; gap: 10px; }
+    .obs-head { display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink); }
+    .kind-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--ink-dim); }
+    .kind-dot[data-k="bloom"]  { background: var(--k-bloom); }
+    .kind-dot[data-k="size"]   { background: var(--k-size); }
+    .kind-dot[data-k="status"] { background: var(--k-status); }
+    .kind-dot[data-k="pest"]   { background: var(--k-pest); }
+    .kind-dot[data-k="note"]   { background: var(--k-note); }
+
+    /* ── Desktop: garden log (read) ──────────────────────────────────────────── */
+    .desk { display: flex; flex-direction: column; gap: 22px; width: 100%; }
+    .desk-head { display: flex; flex-direction: column; gap: 8px; }
+    .desk-head .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--sage); }
+    .desk-head h2 { font-family: var(--serif); font-weight: 700; font-size: clamp(22px,5vw,30px); margin: 0; color: var(--ink); }
+    .desk-head p { margin: 0; color: var(--ink-dim); }
+
+    .desk-body { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 28px; align-items: start; }
+    @media (max-width: 640px) { .desk-body { grid-template-columns: 1fr; } }
+
+    .plant-list { display: flex; flex-direction: column; gap: 8px; }
+    .plant {
+      text-align: left; appearance: none; cursor: pointer; background: var(--ground-2); color: var(--ink);
+      border: 1px solid var(--line); border-radius: 3px; padding: 11px 13px;
+      display: flex; flex-direction: column; gap: 3px; transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    .plant:hover { border-color: var(--sage); }
+    .plant[aria-pressed="true"] { border-color: var(--sage); box-shadow: 0 0 0 1px var(--sage) inset; }
+    .plant .p-name { font-weight: 600; }
+    .plant .p-meta { font-family: var(--mono); font-size: 11px; letter-spacing: .05em; color: var(--ink-dim); }
+    .plant .p-count { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--sage); }
+    .plant .p-count .zero { color: var(--ink-dim); }
+    .plant .p-count .flag { color: var(--k-pest); }
+
+    .timeline-pane { min-width: 0; }
+    .tl-empty { color: var(--ink-dim); padding: 6px 0; }
+    .tl-head { margin-bottom: 20px; }
+    .tl-head h3 { font-family: var(--serif); font-weight: 700; font-size: clamp(20px,4.5vw,26px); margin: 0 0 4px; color: var(--ink); }
+    .tl-head .tl-meta { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--ink-dim); }
+
+    .visit { border-left: 1px solid var(--line); padding: 0 0 4px 16px; margin-bottom: 20px; }
+    .visit-when { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-dim); margin-bottom: 10px; }
+    .entry { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; padding: 5px 0; }
+    .kind-tag {
+      font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+      padding: 3px 7px; border-radius: 2px; border: 1px solid currentColor; flex: none;
+    }
+    .kind-tag[data-k="bloom"]  { color: var(--k-bloom); }
+    .kind-tag[data-k="size"]   { color: var(--k-size); }
+    .kind-tag[data-k="status"] { color: var(--k-status); }
+    .kind-tag[data-k="pest"]   { color: var(--k-pest); }
+    .kind-tag[data-k="fruit"]  { color: var(--k-fruit); }
+    .kind-tag[data-k="note"]   { color: var(--k-note); }
+    .entry-val { color: var(--ink); }
+    .entry-val .followup { font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--k-pest); margin-left: 8px; }
+    .entry-note { flex-basis: 100%; color: var(--ink-dim); font-size: 14px; padding-left: 2px; }
+
+    /* ── Status strip ────────────────────────────────────────────────────────── */
+    .status {
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+      padding: 10px var(--pad); border-top: 1px solid var(--line);
+      font-family: var(--mono); font-size: 11px; letter-spacing: .08em; color: var(--ink-dim);
+    }
+    .chip { display: inline-flex; align-items: center; gap: 7px; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); flex: none; }
+    .chip.warn .dot { background: var(--bark); }
+    .scale { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--ink-dim); }
+    .scale svg { display: block; color: var(--line); }
+
+    .fault {
+      display: none; margin: var(--pad); padding: 14px 16px;
+      border: 1px solid var(--bark); border-left-width: 3px; border-radius: 2px;
+      background: var(--ground-2); color: var(--ink);
+    }
+    .fault[data-shown] { display: block; }
+    .fault code { font-family: var(--mono); color: var(--sage); }
+
+    a { color: var(--sage); }
+    :focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+    @media (prefers-reduced-motion: reduce) {
+      .sheet, .surface[data-active], .modal { animation: none; }
+      * { transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+
+    <header class="bar">
+      <div class="brand">
+        <!-- Compass rose, needle set to the lot's true bearing: 23° E of N. -->
+        <svg class="compass" viewBox="0 0 100 100" aria-hidden="true">
+          <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/>
+          <circle cx="50" cy="50" r="34" fill="none" stroke="currentColor" stroke-width="1" opacity=".3"/>
+          <g transform="rotate(23 50 50)">
+            <polygon points="50,8 44,50 50,44 56,50" fill="currentColor"/>
+            <polygon points="50,92 44,50 50,56 56,50" fill="currentColor" opacity=".35"/>
+            <text x="50" y="24" text-anchor="middle" font-family="serif" font-size="15" fill="var(--ground)" font-weight="700">N</text>
+          </g>
+        </svg>
+        <div class="wordmark">
+          <h1>SAGE</h1>
+          <div class="place">Parkdale Cove · zone 3b · 23°E of N</div>
+        </div>
+      </div>
+
+      <div class="modes" role="tablist" aria-label="Mode">
+        <button id="mode-field"   role="tab" aria-selected="true"  aria-controls="surface-field">Field</button>
+        <button id="mode-desktop" role="tab" aria-selected="false" aria-controls="surface-desktop">Desktop</button>
+      </div>
+    </header>
+
+    <div class="fault" id="fault">
+      <strong>The data layer didn’t load.</strong>
+      Make sure <code>data.js</code> sits in the same folder as <code>index.html</code>, then refresh.
+    </div>
+
+    <main>
+      <!-- FIELD -->
+      <section class="surface" id="surface-field" role="tabpanel" aria-labelledby="mode-field" data-active>
+        <nav class="subnav" role="tablist" aria-label="Field views">
+          <button type="button" role="tab" id="sub-briefing" aria-current="false">Briefing</button>
+          <button type="button" role="tab" id="sub-place" aria-current="false">Place</button>
+          <button type="button" role="tab" id="sub-capture" aria-current="true">Capture</button>
+        </nav>
+
+        <div class="field-panel" id="panel-briefing" role="tabpanel" aria-labelledby="sub-briefing">
+          <p style="color:var(--ink-dim); max-width:46ch;">The Briefing dashboard — today's weather, what's blooming, watch-for reminders — lands in a later beat.</p>
+        </div>
+
+        <div class="field-panel grow" id="panel-place" role="tabpanel" aria-labelledby="sub-place">
+          <div class="place-wrap">
+            <div class="place-head">
+              <div class="eyebrow">Field · Place</div>
+              <div class="place-import">
+                <button id="place-import-btn" class="btn-ghost" type="button">Import map data</button>
+                <input type="file" id="place-import-file" accept="application/json,.json" hidden />
+                <span class="count" id="place-import-status"></span>
+              </div>
+            </div>
+            <div class="place-empty" id="place-empty" hidden>
+              <p>No yard geometry saved yet. Import a map export to draw the plan here.</p>
+            </div>
+            <div class="place-stage" id="place-stage" hidden>
+              <svg id="place-map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+              <button class="p-focusbtn" id="place-focus-btn" type="button">
+                <span class="dot"></span><span id="place-focus-lbl">Focus garden</span>
+              </button>
+              <svg class="p-ov p-compass" viewBox="0 0 64 64" id="place-compass" aria-hidden="true">
+                <g class="rose">
+                  <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
+                  <polygon points="32,7 27,32 32,27 37,32" fill="currentColor"/>
+                  <polygon points="32,57 27,32 32,37 37,32" fill="none" stroke="currentColor" stroke-width=".8" opacity=".5"/>
+                  <text x="32" y="6" text-anchor="middle" font-size="9" font-weight="700" fill="currentColor" font-family="serif">N</text>
+                </g>
+              </svg>
+              <div class="p-ov p-scalebar" id="place-scalebar"><span id="place-scale-lbl">10 ft</span><div class="bar" id="place-scale-bar"></div></div>
+              <div class="p-viewctl">
+                <button id="place-zin" type="button" aria-label="Zoom in">+</button>
+                <button id="place-zout" type="button" aria-label="Zoom out">&minus;</button>
+              </div>
+              <div class="p-readout" id="place-readout"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-panel" id="panel-capture" aria-labelledby="sub-capture" data-active>
+          <div class="capture-launch">
+            <div class="cap-head">
+              <div class="eyebrow">Field · Capture</div>
+              <h2>Log what you see.</h2>
+              <p>Pick one plant, then note everything you notice — bloom, size, status, pests. It all saves as a single visit.</p>
+            </div>
+            <button id="open-capture" class="btn-log" type="button">＋ Log an observation</button>
+            <button id="seed-btn" class="btn-ghost" type="button" hidden>Seed sample plants</button>
+            <div class="launch-meta" id="launch-meta"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- DESKTOP -->
+      <section class="surface" id="surface-desktop" role="tabpanel" aria-labelledby="mode-desktop">
+        <div class="desk">
+          <div class="desk-head">
+            <div class="eyebrow">Desktop</div>
+            <h2>Garden log</h2>
+            <p id="desk-summary">Everything the field has recorded.</p>
+          </div>
+          <div class="desk-body">
+            <aside class="plant-list" id="plant-list" aria-label="Plants"></aside>
+            <div class="timeline-pane" id="timeline-pane"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="status">
+      <span class="chip" id="backend-chip"><span class="dot"></span>starting…</span>
+      <button class="linkbtn" id="signout" type="button" hidden>sign out</button>
+      <span class="scale" aria-label="Scale bar, ten feet">
+        <svg width="88" height="12" viewBox="0 0 88 12">
+          <line x1="1" y1="6" x2="81" y2="6" stroke="currentColor" stroke-width="1"/>
+          <line x1="1" y1="2" x2="1" y2="10" stroke="currentColor" stroke-width="1"/>
+          <line x1="41" y1="3" x2="41" y2="9" stroke="currentColor" stroke-width="1"/>
+          <line x1="81" y1="2" x2="81" y2="10" stroke="currentColor" stroke-width="1"/>
+        </svg>
+        10 ft
+      </span>
+    </footer>
+
+    <!-- Capture modal: subject + all observation kinds, one save = one visit. -->
+    <div class="modal-backdrop" id="capture-modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="capture-title">
+        <header class="modal-head">
+          <h2 id="capture-title">Log an observation</h2>
+          <button id="close-capture" class="modal-x" type="button" aria-label="Close">✕</button>
+        </header>
+        <div class="modal-body">
+          <div class="field-block">
+            <div class="field-label">Subject</div>
+            <div class="subjects" id="subjects" role="group" aria-label="Plant to log against"></div>
+          </div>
+          <div class="field-block">
+            <div class="field-label">Observations <span class="opt">note anything you see</span></div>
+            <div class="obs-sections" id="obs-sections"></div>
+          </div>
+          <label class="flag-row">
+            <input type="checkbox" id="flag-input" />
+            <span>Flag for follow-up <span class="opt">makes a task</span></span>
+          </label>
+        </div>
+        <footer class="modal-foot">
+          <div class="cap-status">
+            <div id="confirm" class="confirm" role="status" aria-live="polite"></div>
+            <div id="will-log" class="count"></div>
+          </div>
+          <div class="foot-actions">
+            <button id="done-capture" class="btn-ghost" type="button">Done</button>
+            <button id="log-btn" class="btn-log" type="button">Log</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+
+    <!-- Sign-in gate: shown only when Supabase is configured and no session. -->
+    <div class="modal-backdrop" id="login-modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="login-title" style="max-width:400px">
+        <header class="modal-head">
+          <h2 id="login-title">Sign in to SAGE</h2>
+        </header>
+        <div class="modal-body">
+          <div class="field-block">
+            <label class="field-label" for="login-email">Email</label>
+            <input class="login-input" id="login-email" type="email" autocomplete="username" />
+          </div>
+          <div class="field-block">
+            <label class="field-label" for="login-pass">Password</label>
+            <input class="login-input" id="login-pass" type="password" autocomplete="current-password" />
+          </div>
+          <div id="login-error" class="confirm warn" role="status" aria-live="polite"></div>
+        </div>
+        <footer class="modal-foot">
+          <div class="count">Your private garden — one account.</div>
+          <div class="foot-actions">
+            <button id="login-btn" class="btn-log" type="button">Sign in</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <script src="supabase-config.js"></script>
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

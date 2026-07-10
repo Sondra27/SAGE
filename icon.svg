@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="SAGE">
+  <rect width="512" height="512" fill="#16211b"/>
+  <g transform="translate(256 256)">
+    <circle r="176" fill="none" stroke="#859173" stroke-width="6" opacity="0.5"/>
+    <circle r="128" fill="none" stroke="#859173" stroke-width="4" opacity="0.3"/>
+    <g transform="rotate(23)">
+      <polygon points="0,-196 -30,0 0,-30 30,0" fill="#859173"/>
+      <polygon points="0,196 -30,0 0,30 30,0" fill="#859173" opacity="0.35"/>
+      <text x="0" y="-118" text-anchor="middle" font-family="Georgia, serif" font-size="72" font-weight="700" fill="#16211b">N</text>
+    </g>
+  </g>
+</svg>

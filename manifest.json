@@ -1,0 +1,14 @@
+{
+  "name": "SAGE — Seasonal Almanac & Garden Exploration",
+  "short_name": "SAGE",
+  "description": "A garden OS for Parkdale Cove.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#16211b",
+  "theme_color": "#16211b",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
