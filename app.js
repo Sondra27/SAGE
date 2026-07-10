@@ -49,6 +49,22 @@
     addModal: byId("add-modal"), closeAdd: byId("close-add"), cancelAdd: byId("cancel-add"),
     saveAdd: byId("save-add"), addZoneName: byId("add-zone-name"),
     addLabel: byId("add-label"), addOrigin: byId("add-origin"),
+
+    // Log Mode (Beat 3): toolbar toggle, zone pill, 4 directional arrows
+    logModeBtn: byId("place-logmode-btn"), logModeLbl: byId("place-logmode-lbl"),
+    zonePill: byId("place-zonepill"), zonePillName: byId("place-zonepill-name"),
+    zonePillClose: byId("place-zonepill-close"),
+    zoneArrows: {
+      up: byId("place-zone-up"), down: byId("place-zone-down"),
+      left: byId("place-zone-left"), right: byId("place-zone-right"),
+    },
+
+    // Zone modal (Log Mode: action + condition)
+    zoneModal: byId("zone-modal"), closeZone: byId("close-zone"), cancelZone: byId("cancel-zone"),
+    saveZone: byId("save-zone"), zoneTitle: byId("zone-title"), zoneConfirm: byId("zone-confirm"),
+    zoneAction: byId("zone-action"), zoneCondCategory: byId("zone-cond-category"),
+    zoneCondSubject: byId("zone-cond-subject"), zoneCondAbundance: byId("zone-cond-abundance"),
+    zoneCondNote: byId("zone-cond-note"),
   };
 
   var SECTIONS = [
@@ -72,6 +88,10 @@
     regionEls: {}, pointers: new Map(), panning: false, moved: 0,
     downXY: null, downTarget: null, downFeet: null, pinchDist: 0, focused: false,
     pins: {}, selectedIndividualId: null, pendingZoneId: null,
+    // Log Mode (Beat 3): off by default; zoneZoomId/preZoomView track the
+    // "zoomed into a zone" sub-state so the pill/arrows know what to show
+    // and there's a single view to snap back to on exit.
+    logMode: false, zoneZoomId: null, preZoomView: null,
   };
 
   main().catch(function (err) {
@@ -250,13 +270,17 @@
 
   // ── capture ────────────────────────────────────────────────────────────────────
   function wireCapture() {
-    el.open.addEventListener("click", openCapture);
+    el.open.addEventListener("click", function () { openCapture(); });
     el.close.addEventListener("click", closeCapture);
     el.done.addEventListener("click", closeCapture);
     el.logBtn.addEventListener("click", onLog);
     el.seed.addEventListener("click", onSeedClick);
     el.modal.addEventListener("mousedown", function (e) { if (e.target === el.modal) closeCapture(); });
-    document.addEventListener("keydown", function (e) { if (e.key === "Escape" && !el.modal.hidden) closeCapture(); });
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Escape") return;
+      if (!el.modal.hidden) closeCapture();
+      if (!el.zoneModal.hidden) closeZoneModal();
+    });
   }
 
   async function onSeedClick() {
@@ -267,17 +291,29 @@
     refreshLauncher();
   }
 
-  async function openCapture() {
+  // fixedInd, when passed (Log Mode pin-tap), pre-locks the subject to that
+  // one individual instead of showing the full picker — the subject is
+  // already resolved by the map tap, so re-picking it would be redundant.
+  async function openCapture(fixedInd) {
     if (state.plantCount === 0) return;
-    renderSubjects(await sage.listIndividuals());
+    var list = fixedInd ? [fixedInd] : await sage.listIndividuals();
+    renderSubjects(list);
     renderSections();
     resetForm();
     el.confirm.textContent = "";
+    byId("capture-title").textContent = fixedInd
+      ? "Log: " + (fixedInd.label || (fixedInd.taxon_id ? (state.names.taxa[fixedInd.taxon_id] || "plant") : "Mystery plant"))
+      : "Log an observation";
     el.modal.hidden = false;
     var first = el.subjects.querySelector(".subject");
     if (first) first.focus();
   }
-  function closeCapture() { el.modal.hidden = true; el.open.focus(); }
+  function closeCapture() {
+    el.modal.hidden = true;
+    // Only steal focus back to the launcher button if it's actually visible
+    // (Log Mode opens this modal from the Place tab, where el.open is hidden).
+    if (el.panelCapture.hasAttribute("data-active")) el.open.focus();
+  }
 
   function renderSubjects(individuals) {
     el.subjects.innerHTML = "";
@@ -498,6 +534,26 @@
     el.saveAdd.addEventListener("click", onSaveAdd);
     el.addModal.addEventListener("mousedown", function (e) { if (e.target === el.addModal) closeAddModal(); });
 
+    // Log Mode toggle
+    el.logModeBtn.addEventListener("click", toggleLogMode);
+
+    // Zone pill (exits the zoomed-into-a-zone sub-state)
+    el.zonePillClose.addEventListener("click", exitZoneZoom);
+
+    // Zone arrows: jump to the nearest zone (by centroid) in that direction
+    Object.keys(el.zoneArrows).forEach(function (dir) {
+      el.zoneArrows[dir].addEventListener("click", function () {
+        var target = el.zoneArrows[dir].dataset.targetZone;
+        if (target) zoomToZone(target, { openModal: false });
+      });
+    });
+
+    // Zone modal
+    el.closeZone.addEventListener("click", closeZoneModal);
+    el.cancelZone.addEventListener("click", closeZoneModal);
+    el.saveZone.addEventListener("click", onSaveZone);
+    el.zoneModal.addEventListener("mousedown", function (e) { if (e.target === el.zoneModal) closeZoneModal(); });
+
     window.addEventListener("resize", function () { if (place.view) applyPlaceView(); });
   }
 
@@ -508,6 +564,21 @@
     var target = place.downTarget, feet = place.downFeet;
     place.downTarget = null;
     if (!feet) return;
+
+    if (place.logMode) {
+      if (target && target.classList.contains("p-pin")) {
+        openIndividualLog(target.dataset.individualId);
+        return;
+      }
+      if (target && target.classList.contains("p-region") && target.dataset.zoneId) {
+        zoomToZone(target.dataset.zoneId, { openModal: true });
+        return;
+      }
+      showPlaceReadout("Nothing to log here yet.");
+      return;
+    }
+
+    // Log Mode off — Beat 2 behavior, unchanged.
     if (target && target.classList.contains("p-pin")) {
       selectIndividual(target.dataset.individualId);
       return;
@@ -632,6 +703,185 @@
     el.placeReadout.classList.add("show");
     clearTimeout(ro2);
     ro2 = setTimeout(function () { el.placeReadout.classList.remove("show"); }, 2200);
+  }
+
+  // ── Place: Log Mode (Beat 3) ────────────────────────────────────────────────────
+  function toggleLogMode() {
+    place.logMode = !place.logMode;
+    el.logModeBtn.setAttribute("aria-pressed", place.logMode ? "true" : "false");
+    el.logModeLbl.textContent = place.logMode ? "Exit Log Mode" : "Log Mode";
+    el.placeStage.toggleAttribute("data-logmode", place.logMode);
+    if (!place.logMode && place.zoneZoomId) exitZoneZoom();
+  }
+
+  async function openIndividualLog(id) {
+    var ind = await sage.getIndividual(id);
+    if (!ind) return;
+    await openCapture(ind);
+  }
+
+  // Tapping a zone region zooms to its bounding box and (for a direct tap)
+  // opens the Zone modal. Arrow-jumps reuse the same zoom, but leave the
+  // modal closed so browsing between zones doesn't force a popup each step.
+  function zoomToZone(zoneId, opts) {
+    var openModal = !opts || opts.openModal !== false;
+    var bbox = zoneBBox(zoneId);
+    if (!bbox) { showPlaceReadout("Zone geometry not found."); return; }
+    if (!place.zoneZoomId) place.preZoomView = { ...place.view }; // remember the way back, once
+    place.zoneZoomId = zoneId;
+    var zoneName = state.names.zones[zoneId] || "zone";
+    showZonePill(zoneName);
+    animatePlaceView(bbox);
+    updateZoneArrows();
+    if (openModal) openZoneModal(zoneId, zoneName);
+  }
+
+  function exitZoneZoom() {
+    if (place.preZoomView) animatePlaceView(place.preZoomView);
+    place.zoneZoomId = null;
+    place.preZoomView = null;
+    hideZonePill();
+    hideZoneArrows();
+  }
+
+  function showZonePill(name) {
+    el.zonePillName.textContent = name;
+    el.zonePill.hidden = false;
+  }
+  function hideZonePill() { el.zonePill.hidden = true; }
+
+  // Union bounding box (in map feet) of every region belonging to zoneId,
+  // read straight off the already-rendered SVG shapes via getBBox() — no
+  // separate polygon-math needed since the regions are already on-screen.
+  function zoneBBox(zoneId) {
+    if (!place.snapshot) return null;
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, any = false;
+    place.snapshot.regions.forEach(function (r) {
+      if (r.zone_id !== zoneId) return;
+      var shape = place.regionEls[r.id];
+      if (!shape) return;
+      var b = shape.getBBox();
+      any = true;
+      minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+      maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
+    });
+    if (!any) return null;
+    var padX = Math.max(2, (maxX - minX) * 0.18), padY = Math.max(2, (maxY - minY) * 0.18);
+    return { x: minX - padX, y: minY - padY, w: (maxX - minX) + padX * 2, h: (maxY - minY) + padY * 2 };
+  }
+
+  // Centroid (bbox center) per zone — good enough for directional stepping;
+  // flagged in the thread starter as something to refine after phone testing.
+  function zoneCentroids() {
+    var bounds = {};
+    (place.snapshot ? place.snapshot.regions : []).forEach(function (r) {
+      if (!r.zone_id) return;
+      var shape = place.regionEls[r.id];
+      if (!shape) return;
+      var b = shape.getBBox();
+      var m = bounds[r.zone_id];
+      if (!m) { bounds[r.zone_id] = { minX: b.x, minY: b.y, maxX: b.x + b.width, maxY: b.y + b.height }; return; }
+      m.minX = Math.min(m.minX, b.x); m.minY = Math.min(m.minY, b.y);
+      m.maxX = Math.max(m.maxX, b.x + b.width); m.maxY = Math.max(m.maxY, b.y + b.height);
+    });
+    var out = {};
+    Object.keys(bounds).forEach(function (zid) {
+      var m = bounds[zid];
+      out[zid] = { x: (m.minX + m.maxX) / 2, y: (m.minY + m.maxY) / 2 };
+    });
+    return out;
+  }
+
+  // Nearest zone centroid whose displacement is dominantly in `dir` (up/down
+  // in feet-space, matching the already Y-flipped map JSON — down is +y).
+  function nearestInDirection(zoneId, dir) {
+    var centroids = zoneCentroids();
+    var cur = centroids[zoneId];
+    if (!cur) return null;
+    var best = null, bestDist = Infinity;
+    Object.keys(centroids).forEach(function (zid) {
+      if (zid === zoneId) return;
+      var c = centroids[zid], dx = c.x - cur.x, dy = c.y - cur.y;
+      var inDir =
+        dir === "right" ? (dx > 0.5 && Math.abs(dx) >= Math.abs(dy)) :
+        dir === "left"  ? (dx < -0.5 && Math.abs(dx) >= Math.abs(dy)) :
+        dir === "down"  ? (dy > 0.5 && Math.abs(dy) >= Math.abs(dx)) :
+                           (dy < -0.5 && Math.abs(dy) >= Math.abs(dx)); // "up"
+      if (!inDir) return;
+      var dist = Math.hypot(dx, dy);
+      if (dist < bestDist) { bestDist = dist; best = zid; }
+    });
+    return best;
+  }
+
+  function updateZoneArrows() {
+    if (!place.zoneZoomId) { hideZoneArrows(); return; }
+    Object.keys(el.zoneArrows).forEach(function (dir) {
+      var target = nearestInDirection(place.zoneZoomId, dir);
+      var btn = el.zoneArrows[dir];
+      btn.hidden = false;
+      btn.disabled = !target;
+      btn.dataset.targetZone = target || "";
+    });
+  }
+  function hideZoneArrows() {
+    Object.keys(el.zoneArrows).forEach(function (dir) { el.zoneArrows[dir].hidden = true; });
+  }
+
+  // ── Place: Zone modal (Log Mode) ────────────────────────────────────────────────
+  var pendingZone = null; // { zoneId, zoneName }
+  function openZoneModal(zoneId, zoneName) {
+    pendingZone = { zoneId: zoneId, zoneName: zoneName };
+    el.zoneTitle.textContent = "Log: " + zoneName;
+    resetZoneForm();
+    setZoneConfirm("", false);
+    el.zoneModal.hidden = false;
+    el.zoneAction.focus();
+  }
+  function closeZoneModal() { el.zoneModal.hidden = true; pendingZone = null; }
+  // Clears the input fields only — the confirm message is set separately by
+  // the caller (openZoneModal blanks it; onSaveZone leaves its result showing
+  // so a rapid-entry save doesn't erase its own confirmation).
+  function resetZoneForm() {
+    el.zoneAction.value = "";
+    el.zoneCondCategory.value = "";
+    el.zoneCondSubject.value = "";
+    el.zoneCondAbundance.value = "";
+    el.zoneCondNote.value = "";
+  }
+  function setZoneConfirm(text, isWarn) {
+    el.zoneConfirm.textContent = text;
+    el.zoneConfirm.classList.toggle("warn", !!isWarn);
+  }
+  async function onSaveZone() {
+    if (!pendingZone) return;
+    var action = el.zoneAction.value.trim();
+    var category = el.zoneCondCategory.value;
+    var subject = el.zoneCondSubject.value.trim();
+    var abundance = el.zoneCondAbundance.value;
+    var note = el.zoneCondNote.value.trim();
+    var hasCondition = !!(category || subject || abundance || note);
+
+    if (!action && !hasCondition) {
+      setZoneConfirm("Fill in an action or a condition first.", true);
+      return;
+    }
+    el.saveZone.disabled = true;
+    var wrote = [];
+    if (action) {
+      await sage.action({ title: action, zoneId: pendingZone.zoneId });
+      wrote.push("action");
+    }
+    if (hasCondition) {
+      await sage.condition({
+        category: category || "general", subject: subject || null,
+        abundance: abundance || null, zoneId: pendingZone.zoneId, note: note || null,
+      });
+      wrote.push("condition");
+    }
+    el.saveZone.disabled = false;
+    resetZoneForm();
+    setZoneConfirm("Logged " + wrote.join(" + ") + " for " + pendingZone.zoneName + ".", false);
   }
 
   // ── Place: add-plant modal (tap bare ground to drop a mystery pin) ─────────────

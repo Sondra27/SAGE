@@ -157,13 +157,56 @@
     .p-scalebar .bar { display: flex; height: 6px; margin-top: 3px; border: 1px solid var(--ink-dim); width: max-content; }
     .p-scalebar .seg { height: 100%; }
     .p-scalebar .seg.on { background: var(--ink-dim); }
-    .p-focusbtn {
-      position: absolute; left: 14px; top: 12px; pointer-events: auto; cursor: pointer;
+
+    /* Log Mode is off by default: taps behave like Beat 2 (select / add-plant).
+       On, the stage gets a sage frame + crosshair cursor as the one "you're in
+       a logging state" cue — reusing the chrome accent, never a data color. */
+    .place-stage[data-logmode] { box-shadow: inset 0 0 0 2px var(--sage); }
+    .place-stage[data-logmode] svg#place-map { cursor: crosshair; }
+    .place-stage[data-logmode] svg#place-map.grabbing { cursor: grabbing; }
+
+    .p-toolbar { position: absolute; left: 14px; top: 12px; display: flex; gap: 8px; pointer-events: none; }
+    .p-focusbtn, .p-logbtn {
+      pointer-events: auto; cursor: pointer;
       display: flex; align-items: center; gap: 7px; padding: 8px 13px; font-family: var(--mono);
       font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
       background: var(--ground-2); color: var(--ink); border: 1px solid var(--line); border-radius: 20px;
     }
-    .p-focusbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
+    .p-focusbtn .dot, .p-logbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
+    .p-logbtn[aria-pressed="true"] { background: var(--sage); color: var(--ground); border-color: var(--sage); }
+    .p-logbtn[aria-pressed="true"] .dot { background: var(--ground); }
+
+    /* Zone pill: persistent while zoomed into a zone (Log Mode). Sits top-
+       center — the one spot the compass/toolbar don't already occupy. */
+    .p-zonepill {
+      top: 12px; left: 50%; transform: translateX(-50%); pointer-events: auto;
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px;
+      background: var(--ground-2); border: 1px solid var(--sage); border-radius: 20px;
+      font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--ink); white-space: nowrap;
+    }
+    .p-zonepill[hidden] { display: none; }
+    .p-zonepill button {
+      appearance: none; background: transparent; border: 0; color: var(--ink-dim); cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 2px 4px;
+    }
+    .p-zonepill button:hover { color: var(--ink); }
+
+    /* Zone arrow-toggle: jumps to the nearest zone (by centroid) in that
+       screen direction. Only visible while zoomed into a zone; disabled when
+       no zone qualifies in that direction. */
+    .p-zonearrow {
+      position: absolute; pointer-events: auto; cursor: pointer; z-index: 5;
+      width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      background: var(--ground-2); border: 1px solid var(--line); color: var(--ink); font-size: 15px; line-height: 1;
+      transition: border-color .15s ease, color .15s ease, opacity .15s ease;
+    }
+    .p-zonearrow:hover { border-color: var(--sage); color: var(--sage); }
+    .p-zonearrow[disabled] { opacity: .3; cursor: default; }
+    .p-zonearrow[hidden] { display: none; }
+    .p-zonearrow.dir-up    { top: 56px; left: 50%; transform: translateX(-50%); }
+    .p-zonearrow.dir-down  { bottom: 56px; left: 50%; transform: translateX(-50%); }
+    .p-zonearrow.dir-left  { left: 14px; top: 50%; transform: translateY(-50%); }
+    .p-zonearrow.dir-right { right: 14px; top: 50%; transform: translateY(-50%); }
     .p-viewctl { position: absolute; right: 14px; bottom: 12px; display: flex; flex-direction: column; gap: 8px; }
     .p-viewctl button {
       pointer-events: auto; cursor: pointer; width: 34px; height: 34px; font-family: var(--mono); font-size: 17px;
@@ -421,9 +464,22 @@
             </div>
             <div class="place-stage" id="place-stage" hidden>
               <svg id="place-map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
-              <button class="p-focusbtn" id="place-focus-btn" type="button">
-                <span class="dot"></span><span id="place-focus-lbl">Focus garden</span>
-              </button>
+              <div class="p-toolbar">
+                <button class="p-focusbtn" id="place-focus-btn" type="button">
+                  <span class="dot"></span><span id="place-focus-lbl">Focus garden</span>
+                </button>
+                <button class="p-logbtn" id="place-logmode-btn" type="button" aria-pressed="false">
+                  <span class="dot"></span><span id="place-logmode-lbl">Log Mode</span>
+                </button>
+              </div>
+              <div class="p-ov p-zonepill" id="place-zonepill" hidden>
+                <span id="place-zonepill-name"></span>
+                <button type="button" id="place-zonepill-close" aria-label="Exit zone view">✕</button>
+              </div>
+              <button class="p-zonearrow dir-up"    id="place-zone-up"    type="button" aria-label="Zone north" hidden>↑</button>
+              <button class="p-zonearrow dir-down"  id="place-zone-down"  type="button" aria-label="Zone south" hidden>↓</button>
+              <button class="p-zonearrow dir-left"  id="place-zone-left"  type="button" aria-label="Zone west"  hidden>←</button>
+              <button class="p-zonearrow dir-right" id="place-zone-right" type="button" aria-label="Zone east"  hidden>→</button>
               <svg class="p-ov p-compass" viewBox="0 0 64 64" id="place-compass" aria-hidden="true">
                 <g class="rose">
                   <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
@@ -582,6 +638,54 @@
           <div class="foot-actions">
             <button id="cancel-add" class="btn-ghost" type="button">Cancel</button>
             <button id="save-add" class="btn-log" type="button">Drop pin</button>
+          </div>
+        </footer>
+      </div>
+    </div>
+    <!-- Zone log: Log Mode's zone-tap modal. Action + Condition, either or
+         both in one save — same "fill in what you want" pattern as Capture. -->
+    <div class="modal-backdrop" id="zone-modal" hidden>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="zone-title" style="max-width:480px">
+        <header class="modal-head">
+          <h2 id="zone-title">Log: Zone</h2>
+          <button id="close-zone" class="modal-x" type="button" aria-label="Close">✕</button>
+        </header>
+        <div class="modal-body">
+          <div class="field-block">
+            <label class="field-label" for="zone-action">Action <span class="opt">optional</span></label>
+            <input class="login-input" id="zone-action" type="text" placeholder="e.g. weed the west bed" maxlength="120" />
+          </div>
+          <div class="field-block">
+            <div class="field-label">Condition <span class="opt">optional</span></div>
+            <div class="value">
+              <select id="zone-cond-category" aria-label="Category">
+                <option value="">category —</option>
+                <option value="weed">weed</option>
+                <option value="frost">frost</option>
+                <option value="soil">soil</option>
+                <option value="moisture">moisture</option>
+                <option value="general">general</option>
+              </select>
+              <input id="zone-cond-subject" type="text" placeholder="e.g. creeping charlie" />
+              <select id="zone-cond-abundance" aria-label="Abundance">
+                <option value="">abundance —</option>
+                <option value="light">light</option>
+                <option value="moderate">moderate</option>
+                <option value="heavy">heavy</option>
+              </select>
+            </div>
+            <div class="value">
+              <textarea id="zone-cond-note" rows="2" placeholder="Anything worth remembering…"></textarea>
+            </div>
+          </div>
+        </div>
+        <footer class="modal-foot">
+          <div class="cap-status">
+            <div id="zone-confirm" class="confirm" role="status" aria-live="polite"></div>
+          </div>
+          <div class="foot-actions">
+            <button id="cancel-zone" class="btn-ghost" type="button">Cancel</button>
+            <button id="save-zone" class="btn-log" type="button">Log</button>
           </div>
         </footer>
       </div>
