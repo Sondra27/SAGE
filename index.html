@@ -7,6 +7,7 @@
   <title>SAGE · Parkdale Cove</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icon-180.png" />
 
   <!-- Playfair Display stands in for Walbaum Display until Walbaum is self-hosted.
        Everything degrades to Georgia if the network is absent (field use). -->
@@ -440,16 +441,7 @@
 
     <header class="bar">
       <div class="brand">
-        <!-- Compass rose, needle set to the lot's true bearing: 23° E of N. -->
-        <svg class="compass" viewBox="0 0 100 100" aria-hidden="true">
-          <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".5"/>
-          <circle cx="50" cy="50" r="34" fill="none" stroke="currentColor" stroke-width="1" opacity=".3"/>
-          <g transform="rotate(23 50 50)">
-            <polygon points="50,8 44,50 50,44 56,50" fill="currentColor"/>
-            <polygon points="50,92 44,50 50,56 56,50" fill="currentColor" opacity=".35"/>
-            <text x="50" y="24" text-anchor="middle" font-family="serif" font-size="15" fill="var(--ground)" font-weight="700">N</text>
-          </g>
-        </svg>
+        <img class="compass" src="icon.svg" width="40" height="40" alt="" />
         <div class="wordmark">
           <h1>SAGE</h1>
           <div class="place">Parkdale Cove · zone 3b · 23°E of N</div>
