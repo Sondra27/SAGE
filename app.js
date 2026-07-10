@@ -40,7 +40,6 @@
     placeImportBtn: byId("place-import-btn"), placeImportFile: byId("place-import-file"),
     placeImportZonesBtn: byId("place-import-zones-btn"), placeImportZonesFile: byId("place-import-zones-file"),
     placeImportStatus: byId("place-import-status"),
-    placeFocusBtn: byId("place-focus-btn"), placeFocusLbl: byId("place-focus-lbl"),
     placeCompass: byId("place-compass"),
     placeScaleBar: byId("place-scale-bar"), placeScaleLbl: byId("place-scale-lbl"),
     placeZin: byId("place-zin"), placeZout: byId("place-zout"), placeReadout: byId("place-readout"),
@@ -86,7 +85,7 @@
   var place = {
     loading: false, snapshot: null, view: null,
     regionEls: {}, pointers: new Map(), panning: false, moved: 0,
-    downXY: null, downTarget: null, downFeet: null, pinchDist: 0, focused: false,
+    downXY: null, downTarget: null, downFeet: null, pinchDist: 0,
     pins: {}, selectedIndividualId: null, pendingZoneId: null, zoneLabelEls: {},
     // Log Mode (Beat 3): off by default; zoneZoomId tracks the "zoomed into
     // a zone" sub-state so the pill/arrows/highlight know what to show.
@@ -468,12 +467,6 @@
     el.placeImportZonesBtn.addEventListener("click", onZonesImportClick);
     el.placeImportZonesFile.addEventListener("change", onImportZonesFile);
 
-    el.placeFocusBtn.addEventListener("click", function () {
-      if (!place.snapshot) return;
-      place.focused = !place.focused;
-      el.placeFocusLbl.textContent = place.focused ? "Whole yard" : "Focus garden";
-      animatePlaceView(place.focused ? place.snapshot.focus : place.snapshot.view);
-    });
     el.placeZin.addEventListener("click", function () { placeZoomAt(placeCenterX(), placeCenterY(), 1 / 1.3); });
     el.placeZout.addEventListener("click", function () { placeZoomAt(placeCenterX(), placeCenterY(), 1.3); });
     el.placeMap.addEventListener("wheel", function (e) {
@@ -634,8 +627,6 @@
     el.placeMap.innerHTML = "";
     place.regionEls = {};
     place.view = { ...snapshot.view };
-    place.focused = false;
-    el.placeFocusLbl.textContent = "Focus garden";
 
     snapshot.regions.forEach(function (r) {
       var shape;
@@ -687,26 +678,46 @@
   }
 
   // Zone name labels — always on, one per zone, positioned at the bbox
-  // centroid of that zone's regions. Re-appended (not just re-styled) on
-  // every call so they land after whatever pins/regions exist right now,
-  // keeping them the topmost thing on the map as pins come and go.
+  // centroid of that zone's regions, appended after pins so they paint on
+  // top. Kept a FIXED screen size regardless of zoom: font-size stays at
+  // ZONE_LABEL_PX, and a counter-scale transform (updated on every pan/zoom
+  // via repositionZoneLabels) cancels out the viewBox's own zoom factor.
+  var ZONE_LABEL_PX = 11; // adjust if this reads too big/small on the phone
   function renderZoneLabels() {
     Object.values(place.zoneLabelEls || {}).forEach(function (t) { t.remove(); });
     place.zoneLabelEls = {};
+    place.zoneLabelPos = {};
     if (!place.snapshot) return;
     var centroids = zoneCentroids();
     Object.keys(centroids).forEach(function (zid) {
       var name = state.names.zones[zid];
       if (!name) return;
       var c = centroids[zid];
+      place.zoneLabelPos[zid] = c;
       var t = document.createElementNS(SVGNS, "text");
-      t.setAttribute("x", c.x); t.setAttribute("y", c.y);
-      t.setAttribute("font-size", "2.4");
+      t.setAttribute("font-size", ZONE_LABEL_PX);
       t.setAttribute("text-anchor", "middle");
       t.setAttribute("class", "p-zonelabel");
       t.textContent = name;
       el.placeMap.appendChild(t);
       place.zoneLabelEls[zid] = t;
+    });
+    repositionZoneLabels();
+  }
+
+  // Recomputes each label's counter-scale transform from the current view.
+  // Cheap (no getBBox calls) so it's safe to run on every animation frame.
+  function repositionZoneLabels() {
+    if (!place.view) return;
+    var rect = el.placeMap.getBoundingClientRect();
+    if (!rect.width) return;
+    var scale = Math.min(rect.width / place.view.w, rect.height / place.view.h);
+    if (!scale) return;
+    var inv = 1 / scale;
+    Object.keys(place.zoneLabelEls || {}).forEach(function (zid) {
+      var c = place.zoneLabelPos[zid], t = place.zoneLabelEls[zid];
+      if (!c || !t) return;
+      t.setAttribute("transform", "translate(" + c.x + "," + c.y + ") scale(" + inv + ")");
     });
   }
   function markPinSelected() {
@@ -951,6 +962,7 @@
   function applyPlaceView() {
     el.placeMap.setAttribute("viewBox", place.view.x + " " + place.view.y + " " + place.view.w + " " + place.view.h);
     updatePlaceScale();
+    repositionZoneLabels();
   }
 
   function placeFeetAt(px, py) {

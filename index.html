@@ -12,7 +12,7 @@
        Everything degrades to Georgia if the network is absent (field use). -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;900&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;700;900&family=Carlito:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
 
   <style>
     /* ── Design Rules, baked in ──────────────────────────────────────────────
@@ -37,7 +37,11 @@
 
       --serif: "Walbaum Display","Playfair Display",Georgia,"Times New Roman",serif;
       --sans:  "Aptos","Carlito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-      --mono:  "Aptos Mono",ui-monospace,"SF Mono","Cascadia Code","Roboto Mono",monospace;
+      /* Aptos isn't a web-loadable font, so this stack used to fall all the
+         way through to the browser's generic monospace. Carlito is now
+         loaded above (an open, metric-compatible Aptos/Calibri substitute),
+         so the letter-spaced "label" text reads as intended sans, not code. */
+      --mono:  "Aptos","Carlito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 
       --pad: clamp(16px, 4vw, 32px);
       --sheet-max: 1400px;
@@ -173,13 +177,13 @@
     .place-stage[data-logmode] .p-logtint { opacity: .13; }
 
     .p-toolbar { position: absolute; left: 14px; top: 12px; display: flex; gap: 8px; pointer-events: none; }
-    .p-focusbtn, .p-logbtn {
+    .p-logbtn {
       pointer-events: auto; cursor: pointer;
       display: flex; align-items: center; gap: 7px; padding: 8px 13px; font-family: var(--mono);
       font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
       background: var(--ground-2); color: var(--ink); border: 1px solid var(--line); border-radius: 20px;
     }
-    .p-focusbtn .dot, .p-logbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
+    .p-logbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
     .p-logbtn[aria-pressed="true"] { background: var(--sage); color: var(--ground); border-color: var(--sage); }
     .p-logbtn[aria-pressed="true"] .dot { background: var(--ground); }
 
@@ -223,8 +227,9 @@
 
     /* Zone name labels: always-on, muted site-plan lettering, painted above
        every region AND every pin (appended last in DOM order each render).
-       Sized in map-feet units on purpose — like a real site plan, label size
-       scales with zoom instead of staying a fixed screen size. */
+       Held at a fixed screen size regardless of zoom (see ZONE_LABEL_PX /
+       repositionZoneLabels in app.js) — a counter-scale transform per label
+       cancels out the viewBox's own zoom factor. */
     .p-zonelabel {
       font-family: var(--mono); letter-spacing: .02em; text-transform: uppercase;
       fill: var(--ink); fill-opacity: .5; pointer-events: none;
@@ -357,7 +362,15 @@
     .desk-head p { margin: 0; color: var(--ink-dim); }
 
     .desk-body { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 28px; align-items: start; }
-    @media (max-width: 640px) { .desk-body { grid-template-columns: 1fr; } }
+    @media (max-width: 640px) {
+      .desk-body { grid-template-columns: 1fr; }
+      /* On a phone the subnav tab + mode toggle already say what surface
+         you're on — this eyebrow ("Field · Place") is redundant there. */
+      .place-head .eyebrow, .cap-head .eyebrow, .desk-head .eyebrow { display: none; }
+      /* Map/zone import is a desktop file-picker workflow (DXF pipeline
+         output); suppressed on mobile rather than removed outright. */
+      .place-import { display: none; }
+    }
 
     .plant-list { display: flex; flex-direction: column; gap: 8px; }
     .plant {
@@ -405,8 +418,6 @@
     .chip { display: inline-flex; align-items: center; gap: 7px; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); flex: none; }
     .chip.warn .dot { background: var(--bark); }
-    .scale { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; color: var(--ink-dim); }
-    .scale svg { display: block; color: var(--line); }
 
     .fault {
       display: none; margin: var(--pad); padding: 14px 16px;
@@ -488,9 +499,6 @@
               <svg id="place-map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
               <div class="p-logtint" aria-hidden="true"></div>
               <div class="p-toolbar">
-                <button class="p-focusbtn" id="place-focus-btn" type="button">
-                  <span class="dot"></span><span id="place-focus-lbl">Focus garden</span>
-                </button>
                 <button class="p-logbtn" id="place-logmode-btn" type="button" aria-pressed="false">
                   <span class="dot"></span><span id="place-logmode-lbl">Log Mode</span>
                 </button>
@@ -554,15 +562,6 @@
     <footer class="status">
       <span class="chip" id="backend-chip"><span class="dot"></span>starting…</span>
       <button class="linkbtn" id="signout" type="button" hidden>sign out</button>
-      <span class="scale" aria-label="Scale bar, ten feet">
-        <svg width="88" height="12" viewBox="0 0 88 12">
-          <line x1="1" y1="6" x2="81" y2="6" stroke="currentColor" stroke-width="1"/>
-          <line x1="1" y1="2" x2="1" y2="10" stroke="currentColor" stroke-width="1"/>
-          <line x1="41" y1="3" x2="41" y2="9" stroke="currentColor" stroke-width="1"/>
-          <line x1="81" y1="2" x2="81" y2="10" stroke="currentColor" stroke-width="1"/>
-        </svg>
-        10 ft
-      </span>
     </footer>
 
     <!-- Capture modal: subject + all observation kinds, one save = one visit. -->
