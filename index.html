@@ -158,10 +158,6 @@
     .p-pin.sel { stroke: var(--ink); stroke-width: .5; }
     .p-ov { position: absolute; pointer-events: none; color: var(--ink); }
     .p-compass { top: 12px; right: 14px; width: 52px; height: 52px; opacity: .9; }
-    .p-scalebar { left: 14px; bottom: 12px; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; color: var(--ink-dim); }
-    .p-scalebar .bar { display: flex; height: 6px; margin-top: 3px; border: 1px solid var(--ink-dim); width: max-content; }
-    .p-scalebar .seg { height: 100%; }
-    .p-scalebar .seg.on { background: var(--ink-dim); }
 
     /* Log Mode is off by default: taps behave like Beat 2 (select / add-plant).
        On, a low-opacity sage wash covers the whole map — visible regardless
@@ -511,7 +507,6 @@
                   <text x="32" y="6" text-anchor="middle" font-size="9" font-weight="700" fill="currentColor" font-family="serif">N</text>
                 </g>
               </svg>
-              <div class="p-ov p-scalebar" id="place-scalebar"><span id="place-scale-lbl">10 ft</span><div class="bar" id="place-scale-bar"></div></div>
               <div class="p-viewctl">
                 <button id="place-zin" type="button" aria-label="Zoom in">+</button>
                 <button id="place-zout" type="button" aria-label="Zoom out">&minus;</button>

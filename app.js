@@ -41,7 +41,6 @@
     placeImportZonesBtn: byId("place-import-zones-btn"), placeImportZonesFile: byId("place-import-zones-file"),
     placeImportStatus: byId("place-import-status"),
     placeCompass: byId("place-compass"),
-    placeScaleBar: byId("place-scale-bar"), placeScaleLbl: byId("place-scale-lbl"),
     placeZin: byId("place-zin"), placeZout: byId("place-zout"), placeReadout: byId("place-readout"),
 
     // Add plant modal
@@ -1006,7 +1005,6 @@
 
   function applyPlaceView() {
     el.placeMap.setAttribute("viewBox", place.view.x + " " + place.view.y + " " + place.view.w + " " + place.view.h);
-    updatePlaceScale();
     repositionZoneLabels();
   }
 
@@ -1044,24 +1042,6 @@
       if (k < 1) requestAnimationFrame(step);
     }
     requestAnimationFrame(step);
-  }
-
-  function updatePlaceScale() {
-    var rect = el.placeMap.getBoundingClientRect();
-    if (!rect.width) return;
-    var scale = Math.min(rect.width / place.view.w, rect.height / place.view.h);
-    var targetPx = 78, raw = targetPx / scale;
-    var nices = [1, 2, 5, 10, 20, 25, 50, 100], ft = nices[0];
-    nices.forEach(function (n) { if (n <= raw) ft = n; });
-    var segPx = (ft / 4) * scale;
-    el.placeScaleBar.innerHTML = "";
-    for (var i = 0; i < 4; i++) {
-      var seg = document.createElement("div");
-      seg.className = "seg" + (i % 2 ? " on" : "");
-      seg.style.width = segPx + "px";
-      el.placeScaleBar.appendChild(seg);
-    }
-    el.placeScaleLbl.textContent = ft + " ft";
   }
 
   // ── Place: import ────────────────────────────────────────────────────────────
