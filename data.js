@@ -115,6 +115,22 @@ function createSAGE(backend = MemoryBackend()) {
       });
     },
 
+    /**
+     * Patch an existing Zone's metadata (kind/color/notes/name/focus) without
+     * touching its id or its regions' zone_id links. The zone-sync tool uses
+     * this so re-running a sync updates rows in place instead of inserting
+     * duplicates. → the updated zone, or null if the id doesn't exist.
+     */
+    async updateZone(id, { name, kind, color, focus, notes } = {}) {
+      const patch = {};
+      if (name !== undefined) patch.name = name;
+      if (kind !== undefined) patch.kind = kind ?? null;
+      if (color !== undefined) patch.color = color ?? null;
+      if (focus !== undefined) patch.focus = focus ?? null;
+      if (notes !== undefined) patch.notes = notes ?? null;
+      return db.update("zones", id, patch);
+    },
+
 
     // ── PLACE  (field map: tap-to-drop a new Individual) ───────────────────
 

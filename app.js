@@ -463,8 +463,8 @@
   function wirePlace() {
     el.placeImportBtn.addEventListener("click", function () { el.placeImportFile.click(); });
     el.placeImportFile.addEventListener("change", onImportFile);
-    el.placeImportZonesBtn.addEventListener("click", onZonesImportClick);
-    el.placeImportZonesFile.addEventListener("change", onImportZonesFile);
+    el.placeImportZonesBtn.addEventListener("click", function () { el.placeImportZonesFile.click(); });
+    el.placeImportZonesFile.addEventListener("change", onSyncZonesFile);
 
     el.placeZin.addEventListener("click", function () { placeZoomAt(placeCenterX(), placeCenterY(), 1 / 1.3); });
     el.placeZout.addEventListener("click", function () { placeZoomAt(placeCenterX(), placeCenterY(), 1.3); });
@@ -600,25 +600,6 @@
 
   async function refreshZoneImportVisibility() {
     el.placeImportZonesBtn.hidden = !place.snapshot;
-  }
-
-  // Clicking "Import zones" checks what's already there rather than the
-  // button silently disappearing — if zones already exist, it says so and
-  // arms a second click instead of hiding the option with no explanation.
-  var zonesImportArmed = false;
-  async function onZonesImportClick() {
-    if (!place.snapshot) return;
-    if (!zonesImportArmed) {
-      var existing = await sage.query({ entity: "zones" });
-      if (existing.length) {
-        zonesImportArmed = true;
-        el.placeImportStatus.textContent =
-          plural(existing.length, "zone") + " already here — click Import zones again to add 19 more anyway.";
-        return;
-      }
-    }
-    zonesImportArmed = false;
-    el.placeImportZonesFile.click();
   }
 
   function showPlaceEmpty(isEmpty) {
@@ -1071,47 +1052,88 @@
     reader.readAsText(file);
   }
 
-  // One-time bootstrap: your 19 real zones don't exist as rows yet, and
-  // regions don't know which zone they belong to. This creates the zone rows
-  // (each mints its own real id — data.js's client-minted-id pattern, so we
-  // never hand it one), then patches that mapping onto the already-loaded
-  // map_data snapshot's regions and saves it back. Guarded to run once — the
-  // button hides itself once any zones exist, same convention as Seed sample
-  // plants, since re-running would create duplicate zone rows.
-  async function onImportZonesFile(e) {
+  // Repeatable sync (replaces the old one-time bootstrap): reconciles a
+  // zones export — either the raw array the old bootstrap used, or a full
+  // "SAGE Garden Map" file (has a top-level .zones array with .members lists
+  // of region ids) — against what's really in Supabase and whatever map
+  // geometry is currently loaded.
+  //
+  // Zones are matched by NAME, never re-inserted for a name that already
+  // exists — so this is safe to run again after every DXF re-bake or zone
+  // edit, unlike the old bootstrap which would mint 19 duplicate rows on a
+  // second run. Region → zone_id links are always fully re-derived from the
+  // file (clean slate first), since that's the only way a region dropped
+  // from every zone in the file ends up correctly unzoned rather than
+  // keeping a stale link from before.
+  async function onSyncZonesFile(e) {
     var file = e.target.files[0];
     e.target.value = "";
     if (!file || !place.snapshot) return;
     var reader = new FileReader();
     reader.onload = async function () {
-      var zonesIn;
-      try { zonesIn = JSON.parse(reader.result); }
+      var parsed;
+      try { parsed = JSON.parse(reader.result); }
       catch (err) { el.placeImportStatus.textContent = "Couldn't read that file — not valid JSON."; return; }
+      var zonesIn = Array.isArray(parsed) ? parsed : parsed.zones;
       if (!Array.isArray(zonesIn) || !zonesIn.length) {
         el.placeImportStatus.textContent = "That file doesn't look like a zones export.";
         return;
       }
       el.placeImportZonesBtn.disabled = true;
-      var tempToReal = {};
+
+      var existing = await sage.query({ entity: "zones" });
+      var byName = {};
+      existing.forEach(function (z) { byName[z.name] = z; });
+
+      var created = 0, updated = 0, unchanged = 0;
+      var nameToRealId = {};
+
       for (var i = 0; i < zonesIn.length; i++) {
         var z = zonesIn[i];
-        var row = await sage.addZone({ name: z.name, kind: z.kind, color: z.color, notes: z.notes || null });
-        tempToReal[z.tempId] = row.id;
+        var have = byName[z.name];
+        if (!have) {
+          var row = await sage.addZone({ name: z.name, kind: z.kind, color: z.color, notes: z.notes || null });
+          nameToRealId[z.name] = row.id;
+          created++;
+        } else {
+          nameToRealId[z.name] = have.id;
+          var changed = (have.kind ?? null) !== (z.kind ?? null) ||
+            (have.color ?? null) !== (z.color ?? null) ||
+            (have.notes ?? null) !== (z.notes || null);
+          if (changed) {
+            await sage.updateZone(have.id, { kind: z.kind, color: z.color, notes: z.notes || null });
+            updated++;
+          } else {
+            unchanged++;
+          }
+        }
       }
+
       place.snapshot.regions.forEach(function (r) { r.zone_id = null; });
+      var linked = 0;
+      var missingRegions = [];
       zonesIn.forEach(function (z) {
-        var realId = tempToReal[z.tempId];
+        var realId = nameToRealId[z.name];
         (z.members || []).forEach(function (regionId) {
           var region = place.snapshot.regions.find(function (rr) { return rr.id === regionId; });
-          if (region) region.zone_id = realId;
+          if (region) { region.zone_id = realId; linked++; }
+          else missingRegions.push(regionId);
         });
       });
+
       await sage.saveMapData(place.snapshot);
       await loadNames();       // so zone names resolve in the add-plant modal
       await ensurePlaceLoaded();
       el.placeImportZonesBtn.disabled = false;
-      zonesImportArmed = false;
-      el.placeImportStatus.textContent = plural(zonesIn.length, "zone") + " imported.";
+
+      var msg = plural(linked, "region") + " linked across " + plural(zonesIn.length, "zone") +
+        " (" + created + " new, " + updated + " updated, " + unchanged + " unchanged).";
+      if (missingRegions.length) {
+        msg += " " + plural(missingRegions.length, "region") +
+          " in the file weren't found on the current map — worth a spot check: " +
+          missingRegions.slice(0, 6).join(", ") + (missingRegions.length > 6 ? "…" : "") + ".";
+      }
+      el.placeImportStatus.textContent = msg;
     };
     reader.readAsText(file);
   }
