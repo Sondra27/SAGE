@@ -173,6 +173,15 @@
     }
     .place-stage[data-logmode] .p-logtint { opacity: .13; }
 
+    /* Reposition Mode: a dedicated toggle, mutually exclusive with Log Mode
+       (both hijack what tapping/dragging a pin does, so only one is ever on).
+       Uses ink-dim rather than sage for the mode wash so the two modes read
+       as visually distinct at a glance, not just by their toolbar label. */
+    .place-stage[data-reposmode] { box-shadow: inset 0 0 0 2px var(--ink-dim); }
+    .place-stage[data-reposmode] .p-pin { cursor: grab; }
+    .p-pin.dragging { cursor: grabbing; filter: drop-shadow(0 0 3px var(--sage)); }
+    .p-pin.pending { stroke: var(--sage); stroke-width: .6; stroke-dasharray: .3 .25; }
+
     .p-toolbar { position: absolute; left: 14px; top: 12px; display: flex; gap: 8px; pointer-events: none; }
     .p-logbtn {
       pointer-events: auto; cursor: pointer;
@@ -199,6 +208,26 @@
       font-size: 14px; line-height: 1; padding: 2px 4px;
     }
     .p-zonepill button:hover { color: var(--ink); }
+
+    /* Move pill: shown once a dragged pin is dropped, pending confirm. Same
+       template as the zone pill (own class so its CSS can't be disturbed by
+       future zone-pill edits) — sits in the same slot since the two modes
+       that use these pills (Log Mode / Reposition Mode) are mutually
+       exclusive and never show both at once. */
+    .p-movepill {
+      top: 56px; left: 14px; pointer-events: auto;
+      display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px;
+      background: var(--ground-2); border: 1px solid var(--ink-dim); border-radius: 20px;
+      font-family: var(--mono); font-size: 11px; letter-spacing: .06em; color: var(--ink); white-space: nowrap;
+    }
+    .p-movepill[hidden] { display: none; }
+    .p-movepill button {
+      appearance: none; background: transparent; border: 0; cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 2px 4px;
+    }
+    .p-movepill .move-confirm { color: var(--sage); }
+    .p-movepill .move-cancel { color: var(--ink-dim); }
+    .p-movepill button:hover { opacity: .8; }
 
     /* Zone arrow-toggle: jumps to the nearest zone (by centroid) in that
        screen direction. Only visible while zoomed into a zone; disabled when
@@ -490,10 +519,18 @@
                 <button class="p-logbtn" id="place-logmode-btn" type="button" aria-pressed="false">
                   <span class="dot"></span><span id="place-logmode-lbl">Log Mode</span>
                 </button>
+                <button class="p-logbtn" id="place-repos-btn" type="button" aria-pressed="false">
+                  <span class="dot"></span><span id="place-repos-lbl">Reposition</span>
+                </button>
               </div>
               <div class="p-ov p-zonepill" id="place-zonepill" hidden>
                 <span id="place-zonepill-name"></span>
                 <button type="button" id="place-zonepill-close" aria-label="Exit zone view">✕</button>
+              </div>
+              <div class="p-ov p-movepill" id="place-movepill" hidden>
+                <span>Move pin?</span>
+                <button type="button" class="move-confirm" id="place-move-confirm" aria-label="Confirm move">✓</button>
+                <button type="button" class="move-cancel" id="place-move-cancel" aria-label="Cancel move">✕</button>
               </div>
               <button class="p-zonearrow dir-up"    id="place-zone-up"    type="button" aria-label="Zone north" hidden>↑</button>
               <button class="p-zonearrow dir-down"  id="place-zone-down"  type="button" aria-label="Zone south" hidden>↓</button>

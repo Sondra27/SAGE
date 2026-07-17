@@ -52,6 +52,12 @@
     logModeBtn: byId("place-logmode-btn"), logModeLbl: byId("place-logmode-lbl"),
     zonePill: byId("place-zonepill"), zonePillName: byId("place-zonepill-name"),
     zonePillClose: byId("place-zonepill-close"),
+
+    // Pin drag-to-reposition: toolbar toggle (mutually exclusive with Log
+    // Mode) + the pending-move confirm/cancel pill
+    reposBtn: byId("place-repos-btn"), reposLbl: byId("place-repos-lbl"),
+    movePill: byId("place-movepill"),
+    moveConfirm: byId("place-move-confirm"), moveCancel: byId("place-move-cancel"),
     zoneArrows: {
       up: byId("place-zone-up"), down: byId("place-zone-down"),
       left: byId("place-zone-left"), right: byId("place-zone-right"),
@@ -91,6 +97,14 @@
     // Exiting a zone deliberately does NOT restore a prior view — mid-log
     // you may want to stay right where you are and tap a nearby plant.
     logMode: false, zoneZoomId: null,
+    // Pin drag-to-reposition: off by default, mutually exclusive with Log
+    // Mode. dragCandidateId is set on pointerdown over a pin while reposMode
+    // is on; dragging flips true once the move threshold is crossed (so a
+    // plain tap on a pin still just selects it, same as Beat 2). pendingMove
+    // holds the dropped-but-unconfirmed position until the move pill's
+    // confirm/cancel is tapped.
+    reposMode: false, dragCandidateId: null, dragging: false, dragOrig: null,
+    pendingMove: null,
   };
 
   main().catch(function (err) {
@@ -481,6 +495,12 @@
         place.downTarget = (e.target.classList && (e.target.classList.contains("p-region") || e.target.classList.contains("p-pin")))
           ? e.target : null;
         place.downFeet = place.view ? placeFeetAt(e.clientX, e.clientY) : null;
+        // Reposition Mode: pointerdown on a pin is a drag candidate, not a
+        // pan candidate. Only actually becomes a drag once the same 12px
+        // moved-threshold is crossed below, so a plain tap on a pin still
+        // just selects it rather than always "picking it up."
+        place.dragCandidateId = (place.reposMode && place.downTarget && place.downTarget.classList.contains("p-pin"))
+          ? place.downTarget.dataset.individualId : null;
       } else if (place.pointers.size === 2) {
         var p2 = Array.from(place.pointers.values());
         place.pinchDist = Math.hypot(p2[0].x - p2[1].x, p2[0].y - p2[1].y);
@@ -500,6 +520,20 @@
         place.pinchDist = d; return;
       }
       if (place.downXY) place.moved = Math.max(place.moved, Math.hypot(e.clientX - place.downXY.x, e.clientY - place.downXY.y));
+
+      // Reposition Mode: dragging a pin takes priority over panning the map.
+      // Same 12px jitter threshold as the tap/pan split below, so a genuine
+      // drag can't be swallowed by finger jitter either.
+      if (place.dragCandidateId) {
+        if (!place.dragging && place.moved > 12) beginPinDrag();
+        if (place.dragging) {
+          var feet = placeFeetAt(e.clientX, e.clientY);
+          var pin = place.pins[place.dragCandidateId];
+          if (pin) { pin.setAttribute("cx", feet.x); pin.setAttribute("cy", feet.y); }
+          return;
+        }
+      }
+
       // 12px, not 6: a real finger has more jitter than a mouse, and at 6px a
       // genuine tap could get misread as a micro-pan, silently swallowing the
       // intended placement/selection (this was the "finicky" mystery-plant
@@ -518,8 +552,10 @@
       place.pointers.delete(e.pointerId);
       el.placeMap.classList.remove("grabbing");
       if (place.pointers.size === 0) {
-        if (!place.panning) onPlaceTap();
+        if (place.dragging) finishPinDrag();
+        else if (!place.panning) onPlaceTap();
         place.downXY = null; place.panning = false;
+        place.dragging = false; place.dragCandidateId = null;
       }
     }
     el.placeMap.addEventListener("pointerup", endPointer);
@@ -533,6 +569,11 @@
 
     // Log Mode toggle
     el.logModeBtn.addEventListener("click", toggleLogMode);
+
+    // Reposition Mode toggle + move-pending pill
+    el.reposBtn.addEventListener("click", toggleReposMode);
+    el.moveConfirm.addEventListener("click", confirmPendingMove);
+    el.moveCancel.addEventListener("click", cancelPendingMove);
 
     // Zone pill (exits the zoomed-into-a-zone sub-state)
     el.zonePillClose.addEventListener("click", exitZoneZoom);
@@ -561,6 +602,15 @@
     var target = place.downTarget, feet = place.downFeet;
     place.downTarget = null;
     if (!feet) return;
+
+    // Reposition Mode: a plain tap (no drag) on a pin just selects it for
+    // the readout, same as Beat 2 — dragging is the only way to move it.
+    // Bare-ground/region taps do nothing here (no add-plant modal) since
+    // this mode is only about moving existing pins.
+    if (place.reposMode) {
+      if (target && target.classList.contains("p-pin")) selectIndividual(target.dataset.individualId);
+      return;
+    }
 
     if (place.logMode) {
       if (target && target.classList.contains("p-pin")) {
@@ -774,6 +824,72 @@
     el.logModeLbl.textContent = place.logMode ? "Exit Log Mode" : "Log Mode";
     el.placeStage.toggleAttribute("data-logmode", place.logMode);
     if (!place.logMode && place.zoneZoomId) exitZoneZoom();
+    // Mutually exclusive with Reposition Mode — both hijack pin taps/drags.
+    if (place.logMode && place.reposMode) toggleReposMode();
+  }
+
+  // ── Place: Reposition Mode (pin drag-to-reposition) ─────────────────────────────
+  // Mutually exclusive with Log Mode. While on, dragging a pin (press-hold +
+  // move past the jitter threshold, handled in the pointermove listener
+  // above) lifts it and follows the finger; releasing drops it as PENDING
+  // (visually distinct, no write yet) until the move pill's confirm/cancel
+  // is tapped. A plain tap on a pin (no drag) just selects it, same as
+  // Beat 2 — see onPlaceTap. No data.js/schema change: map_x/map_y were
+  // already writable fields, so this rides on the new moveIndividual().
+  function toggleReposMode() {
+    if (place.pendingMove) cancelPendingMove();
+    place.reposMode = !place.reposMode;
+    el.reposBtn.setAttribute("aria-pressed", place.reposMode ? "true" : "false");
+    el.reposLbl.textContent = place.reposMode ? "Exit Reposition" : "Reposition";
+    el.placeStage.toggleAttribute("data-reposmode", place.reposMode);
+    if (place.reposMode && place.logMode) toggleLogMode();
+  }
+
+  function beginPinDrag() {
+    // Starting a fresh drag always resolves any move still awaiting confirm
+    // first (reverts it) — one pending move at a time, never orphaned.
+    if (place.pendingMove) cancelPendingMove();
+    var pin = place.pins[place.dragCandidateId];
+    if (!pin) { place.dragCandidateId = null; return; }
+    place.dragging = true;
+    place.dragOrig = { x: parseFloat(pin.getAttribute("cx")), y: parseFloat(pin.getAttribute("cy")) };
+    pin.classList.add("dragging");
+  }
+
+  function finishPinDrag() {
+    var id = place.dragCandidateId;
+    var pin = place.pins[id];
+    if (!pin) return;
+    pin.classList.remove("dragging");
+    pin.classList.add("pending");
+    place.pendingMove = {
+      id: id, pin: pin,
+      origX: place.dragOrig.x, origY: place.dragOrig.y,
+      newX: parseFloat(pin.getAttribute("cx")), newY: parseFloat(pin.getAttribute("cy")),
+    };
+    el.movePill.hidden = false;
+  }
+
+  async function confirmPendingMove() {
+    var pm = place.pendingMove;
+    if (!pm) return;
+    el.moveConfirm.disabled = true;
+    await sage.moveIndividual(pm.id, { mapX: pm.newX, mapY: pm.newY });
+    el.moveConfirm.disabled = false;
+    pm.pin.classList.remove("pending");
+    place.pendingMove = null;
+    el.movePill.hidden = true;
+    showPlaceReadout("Pin moved.");
+  }
+
+  function cancelPendingMove() {
+    var pm = place.pendingMove;
+    if (!pm) return;
+    pm.pin.setAttribute("cx", pm.origX);
+    pm.pin.setAttribute("cy", pm.origY);
+    pm.pin.classList.remove("pending");
+    place.pendingMove = null;
+    el.movePill.hidden = true;
   }
 
   async function openIndividualLog(id) {

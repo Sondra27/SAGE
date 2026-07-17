@@ -161,6 +161,17 @@ function createSAGE(backend = MemoryBackend()) {
     },
 
     /**
+     * Reposition an existing Individual's pin (Place — drag-to-reposition).
+     * Place owns the drag gesture and the pending/confirm UI; this just
+     * persists the final map_x/map_y once the person confirms the move.
+     * No schema change — map_x/map_y were already writable fields.
+     * → the updated individual, or null if the id doesn't exist.
+     */
+    async moveIndividual(id, { mapX, mapY } = {}) {
+      return db.update("individuals", id, { map_x: mapX, map_y: mapY, updated_at: nowISO() });
+    },
+
+    /**
      * The yard's painted geometry (regions + materials) — the blob Place
      * draws. Lives in the single-row map_data table (id always 1). Both
      * backends seed that row on setup, so this normally always finds one.
