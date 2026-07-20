@@ -21,7 +21,7 @@
 
   // ── elements ────────────────────────────────────────────────────────────────
   var el = {
-    modeField: byId("mode-field"), modeDesktop: byId("mode-desktop"),
+    modeSwitch: byId("mode-switch"), modeSwitchLbl: byId("mode-switch-lbl"),
     surfaceField: byId("surface-field"), surfaceDesktop: byId("surface-desktop"),
     open: byId("open-capture"), seed: byId("seed-btn"), launchMeta: byId("launch-meta"),
     modal: byId("capture-modal"), close: byId("close-capture"), done: byId("done-capture"),
@@ -42,6 +42,9 @@
     placeImportStatus: byId("place-import-status"),
     placeCompass: byId("place-compass"),
     placeZin: byId("place-zin"), placeZout: byId("place-zout"), placeReadout: byId("place-readout"),
+
+    // Map data tools: gear icon + dropdown holding the (relocated, 2026-07-17c) import controls
+    gearBtn: byId("place-gear-btn"), gearMenu: byId("place-gearmenu"),
 
     // Add plant modal
     addModal: byId("add-modal"), closeAdd: byId("close-add"), cancelAdd: byId("cancel-add"),
@@ -253,30 +256,26 @@
     show("capture"); // matches the markup's default aria-current
   }
 
-  // ── mode toggle ───────────────────────────────────────────────────────────────
+  // ── mode switcher ─────────────────────────────────────────────────────────────
+  // A single button showing the mode you'd switch TO (not a two-way segmented
+  // tablist) — see Design Rules 2026-07-17c. window.__showMode is kept as the
+  // public entry point since other code (afterBoot, etc.) doesn't call it
+  // directly, but a couple of spots elsewhere in this file historically
+  // reasoned about "the mode toggle" by that name.
   function wireModeToggle() {
-    var tabs = {
-      field:   { btn: el.modeField,   panel: el.surfaceField },
-      desktop: { btn: el.modeDesktop, panel: el.surfaceDesktop },
-    };
-    window.__showMode = function (mode) {
-      Object.keys(tabs).forEach(function (key) {
-        var on = key === mode;
-        tabs[key].btn.setAttribute("aria-selected", on ? "true" : "false");
-        if (on) tabs[key].panel.setAttribute("data-active", "");
-        else    tabs[key].panel.removeAttribute("data-active");
-      });
+    var mode = "field";
+    window.__showMode = function (next) {
+      mode = next;
+      var onField = mode === "field";
+      el.surfaceField.toggleAttribute("data-active", onField);
+      el.surfaceDesktop.toggleAttribute("data-active", !onField);
+      var target = onField ? "Desktop" : "Field";
+      el.modeSwitchLbl.textContent = target;
+      el.modeSwitch.setAttribute("aria-label", "Switch to " + target + " view");
       if (mode === "desktop" && sage) renderDesktop();
     };
-    var order = ["field", "desktop"];
-    Object.keys(tabs).forEach(function (key) {
-      tabs[key].btn.addEventListener("click", function () { window.__showMode(key); });
-      tabs[key].btn.addEventListener("keydown", function (e) {
-        if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-        var i = order.indexOf(key);
-        var next = order[(i + (e.key === "ArrowRight" ? 1 : order.length - 1)) % order.length];
-        window.__showMode(next); tabs[next].btn.focus();
-      });
+    el.modeSwitch.addEventListener("click", function () {
+      window.__showMode(mode === "field" ? "desktop" : "field");
     });
     window.__showMode("field");
   }
@@ -479,6 +478,27 @@
     el.placeImportFile.addEventListener("change", onImportFile);
     el.placeImportZonesBtn.addEventListener("click", function () { el.placeImportZonesFile.click(); });
     el.placeImportZonesFile.addEventListener("change", onSyncZonesFile);
+
+    // Map data tools: gear icon opens/closes the relocated import controls.
+    // Never gated on state (per the standing admin-control rule) — just
+    // tucked behind a tap instead of sitting in the header row.
+    el.gearBtn.addEventListener("click", function () {
+      var opening = el.gearMenu.hidden;
+      el.gearMenu.hidden = !opening;
+      el.gearBtn.setAttribute("aria-expanded", opening ? "true" : "false");
+    });
+    document.addEventListener("click", function (e) {
+      if (el.gearMenu.hidden) return;
+      if (el.gearMenu.contains(e.target) || e.target === el.gearBtn) return;
+      el.gearMenu.hidden = true;
+      el.gearBtn.setAttribute("aria-expanded", "false");
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !el.gearMenu.hidden) {
+        el.gearMenu.hidden = true;
+        el.gearBtn.setAttribute("aria-expanded", "false");
+      }
+    });
 
     el.placeZin.addEventListener("click", function () { placeZoomAt(placeCenterX(), placeCenterY(), 1 / 1.3); });
     el.placeZout.addEventListener("click", function () { placeZoomAt(placeCenterX(), placeCenterY(), 1.3); });

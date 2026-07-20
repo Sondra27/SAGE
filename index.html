@@ -67,16 +67,23 @@
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
-      min-height: 100dvh;
+      height: 100dvh;
+      overflow: hidden; /* the app shell owns the viewport; panels scroll internally */
     }
 
-    /* The whole app is a drawing sheet: a thin double rule, like a site plan. */
+    /* The whole app is a drawing sheet: a thin double rule, like a site plan.
+       height (not min-height): a genuine fixed viewport height is what the
+       whole flex chain below needs to resolve percentage heights against —
+       without it, `svg#place-map { height:100% }` had nothing definite to
+       measure against and fell back to its intrinsic viewBox aspect ratio,
+       which is the actual root cause of the map rendering ~843×1568px. */
     .sheet {
       max-width: var(--sheet-max);
-      min-height: 100dvh;
+      height: 100dvh;
       margin: 0 auto;
       display: flex;
       flex-direction: column;
+      overflow: hidden;
       background: var(--ground);
       border-left: 1px solid var(--line);
       border-right: 1px solid var(--line);
@@ -87,6 +94,7 @@
 
     /* ── App bar ───────────────────────────────────────────────────────────── */
     .bar {
+      flex: none;
       display: flex; align-items: center; gap: var(--pad);
       padding: clamp(14px,3vw,22px) var(--pad); border-bottom: 1px solid var(--line);
     }
@@ -102,24 +110,27 @@
       color: var(--ink-dim); margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
 
-    /* Field / Desktop segmented toggle */
-    .modes { margin-left: auto; display: flex; border: 1px solid var(--line); border-radius: 2px; overflow: hidden; }
-    .modes button {
-      appearance: none; background: transparent; color: var(--ink-dim);
-      font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase;
-      padding: 9px 16px; border: 0; cursor: pointer; transition: color .15s ease, background .15s ease;
+    /* Field/Desktop switcher: a single button showing the mode you'd switch
+       TO (not a two-way segmented pill) — half the width of the old control,
+       which is what actually solved the squeeze on narrow screens. Applied
+       everywhere, not just mobile, for one consistent interaction. */
+    .mode-switch {
+      flex: none; margin-left: auto; appearance: none; cursor: pointer;
+      display: flex; align-items: center; gap: 7px; padding: 9px 16px;
+      background: transparent; color: var(--ink-dim); border: 1px solid var(--line); border-radius: 20px;
+      font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+      transition: color .15s ease, border-color .15s ease;
     }
-    .modes button + button { border-left: 1px solid var(--line); }
-    .modes button:hover { color: var(--ink); }
-    .modes button[aria-selected="true"] { background: var(--sage); color: var(--ground); }
+    .mode-switch:hover { color: var(--ink); border-color: var(--sage); }
+    .mode-switch .arrow { font-size: 13px; line-height: 1; }
 
     /* ── Main / mode surfaces ────────────────────────────────────────────────── */
-    main { flex: 1; padding: var(--pad); display: flex; }
-    .surface { flex: 1; display: none; flex-direction: column; }
+    main { flex: 1; min-height: 0; padding: var(--pad); display: flex; overflow: hidden; }
+    .surface { flex: 1; min-height: 0; display: none; flex-direction: column; overflow: hidden; }
     .surface[data-active] { display: flex; animation: fade-in .25s ease both; }
     @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
-    .subnav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 26px; }
+    .subnav { flex: none; display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 26px; }
     .subnav button {
       appearance: none; cursor: pointer; background: transparent;
       font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
@@ -129,14 +140,19 @@
     .subnav button:hover { color: var(--ink); }
     .subnav button[aria-current="true"] { color: var(--ground); background: var(--sage); border: 1px solid var(--sage); }
     .field-panel { display: none; flex-direction: column; min-height: 0; }
-    .field-panel[data-active] { display: flex; }
-    .field-panel.grow { flex: 1; }
+    /* Every active panel fills the remaining fixed-height space and scrolls
+       internally if its own content ever runs long — the page itself never
+       scrolls. Place still additionally clips (see .place-stage's own
+       overflow:hidden) since the map pans itself; this rule never actually
+       triggers a scrollbar there because place-wrap's children exactly
+       fill it. */
+    .field-panel[data-active] { display: flex; flex: 1; overflow-y: auto; }
+    .field-panel.grow { flex: 1; } /* now redundant with the rule above; left for minimal diff */
 
     /* ── Place: the field map ─────────────────────────────────────────────── */
     .place-wrap { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
-    .place-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .place-head { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .place-head .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--sage); }
-    .place-import { display: flex; align-items: center; gap: 10px; }
     .place-empty {
       flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
       gap: 14px; max-width: 46ch; color: var(--ink-dim);
@@ -192,6 +208,27 @@
     .p-logbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
     .p-logbtn[aria-pressed="true"] { background: var(--sage); color: var(--ground); border-color: var(--sage); }
     .p-logbtn[aria-pressed="true"] .dot { background: var(--ground); }
+
+    /* Map data tools: the map-import / zone-sync controls, relocated here
+       (2026-07-17c) from the place-head row so they're always reachable —
+       never gated on state, per the standing admin-control rule — but
+       "lower-key" as asked, rather than competing for space in the header. */
+    .p-gearbtn {
+      pointer-events: auto; cursor: pointer; width: 34px; height: 34px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--ground-2); color: var(--ink); border: 1px solid var(--line); border-radius: 50%;
+      font-size: 15px; line-height: 1; transition: color .15s ease, border-color .15s ease;
+    }
+    .p-gearbtn:hover { border-color: var(--sage); color: var(--sage); }
+    .p-gearbtn[aria-expanded="true"] { background: var(--sage); color: var(--ground); border-color: var(--sage); }
+    .p-gearmenu {
+      top: 56px; right: 14px; pointer-events: auto; /* right-anchored: never collides with the left-anchored zone/move pills */
+      display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
+      padding: 14px; min-width: 210px;
+      background: var(--ground-2); border: 1px solid var(--line); border-radius: 8px;
+    }
+    .p-gearmenu[hidden] { display: none; }
+    .p-gearmenu .btn-ghost { width: 100%; }
 
     /* Zone pill: persistent while zoomed into a zone (Log Mode). Sits just
        below the toolbar, left-aligned — top-center collided with the
@@ -381,24 +418,31 @@
     .kind-dot[data-k="note"]   { background: var(--k-note); }
 
     /* ── Desktop: garden log (read) ──────────────────────────────────────────── */
-    .desk { display: flex; flex-direction: column; gap: 22px; width: 100%; }
-    .desk-head { display: flex; flex-direction: column; gap: 8px; }
+    .desk { display: flex; flex-direction: column; gap: 22px; width: 100%; flex: 1; min-height: 0; overflow: hidden; }
+    .desk-head { flex: none; display: flex; flex-direction: column; gap: 8px; }
     .desk-head .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--sage); }
     .desk-head h2 { font-family: var(--serif); font-weight: 700; font-size: clamp(22px,5vw,30px); margin: 0; color: var(--ink); }
     .desk-head p { margin: 0; color: var(--ink-dim); }
 
-    .desk-body { display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 28px; align-items: start; }
+    /* Two independent scroll regions side-by-side on wide screens (list,
+       detail) rather than one long page scroll — align-items:stretch (not
+       start) so both columns actually fill the row and can scroll within
+       their own bounds. */
+    .desk-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 28px; align-items: stretch; overflow: hidden; }
     @media (max-width: 640px) {
       .desk-body { grid-template-columns: 1fr; }
+      /* On a phone, two nested independent scroll areas stacked vertically
+         is a worse feel than one plain scroll — let the whole panel scroll
+         together instead. */
+      .desk { overflow-y: auto; }
+      .desk-body { overflow: visible; }
+      .plant-list, .timeline-pane { overflow: visible; }
       /* On a phone the subnav tab + mode toggle already say what surface
          you're on — this eyebrow ("Field · Place") is redundant there. */
       .place-head .eyebrow, .cap-head .eyebrow, .desk-head .eyebrow { display: none; }
-      /* Map/zone import is a desktop file-picker workflow (DXF pipeline
-         output); suppressed on mobile rather than removed outright. */
-      .place-import { display: none; }
     }
 
-    .plant-list { display: flex; flex-direction: column; gap: 8px; }
+    .plant-list { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
     .plant {
       text-align: left; appearance: none; cursor: pointer; background: var(--ground-2); color: var(--ink);
       border: 1px solid var(--line); border-radius: 3px; padding: 11px 13px;
@@ -412,7 +456,7 @@
     .plant .p-count .zero { color: var(--ink-dim); }
     .plant .p-count .flag { color: var(--k-pest); }
 
-    .timeline-pane { min-width: 0; }
+    .timeline-pane { min-width: 0; min-height: 0; overflow-y: auto; }
     .tl-empty { color: var(--ink-dim); padding: 6px 0; }
     .tl-head { margin-bottom: 20px; }
     .tl-head h3 { font-family: var(--serif); font-weight: 700; font-size: clamp(20px,4.5vw,26px); margin: 0 0 4px; color: var(--ink); }
@@ -473,10 +517,9 @@
         </div>
       </div>
 
-      <div class="modes" role="tablist" aria-label="Mode">
-        <button id="mode-field"   role="tab" aria-selected="true"  aria-controls="surface-field">Field</button>
-        <button id="mode-desktop" role="tab" aria-selected="false" aria-controls="surface-desktop">Desktop</button>
-      </div>
+      <button id="mode-switch" class="mode-switch" type="button" aria-label="Switch to Desktop view">
+        <span class="arrow">⇄</span><span id="mode-switch-lbl">Desktop</span>
+      </button>
     </header>
 
     <div class="fault" id="fault">
@@ -486,7 +529,7 @@
 
     <main>
       <!-- FIELD -->
-      <section class="surface" id="surface-field" role="tabpanel" aria-labelledby="mode-field" data-active>
+      <section class="surface" id="surface-field" aria-label="Field" data-active>
         <nav class="subnav" role="tablist" aria-label="Field views">
           <button type="button" role="tab" id="sub-briefing" aria-current="false">Briefing</button>
           <button type="button" role="tab" id="sub-place" aria-current="false">Place</button>
@@ -501,13 +544,6 @@
           <div class="place-wrap">
             <div class="place-head">
               <div class="eyebrow">Field · Place</div>
-              <div class="place-import">
-                <button id="place-import-btn" class="btn-ghost" type="button">Import map data</button>
-                <input type="file" id="place-import-file" accept="application/json,.json" hidden />
-                <button id="place-import-zones-btn" class="btn-ghost" type="button" hidden>Import zones</button>
-                <input type="file" id="place-import-zones-file" accept="application/json,.json" hidden />
-                <span class="count" id="place-import-status"></span>
-              </div>
             </div>
             <div class="place-empty" id="place-empty" hidden>
               <p>No yard geometry saved yet. Import a map export to draw the plan here.</p>
@@ -522,6 +558,14 @@
                 <button class="p-logbtn" id="place-repos-btn" type="button" aria-pressed="false">
                   <span class="dot"></span><span id="place-repos-lbl">Reposition</span>
                 </button>
+                <button class="p-gearbtn" id="place-gear-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Map data tools">⚙</button>
+              </div>
+              <div class="p-ov p-gearmenu" id="place-gearmenu" hidden>
+                <button id="place-import-btn" class="btn-ghost" type="button">Import map data</button>
+                <input type="file" id="place-import-file" accept="application/json,.json" hidden />
+                <button id="place-import-zones-btn" class="btn-ghost" type="button" hidden>Import zones</button>
+                <input type="file" id="place-import-zones-file" accept="application/json,.json" hidden />
+                <span class="count" id="place-import-status"></span>
               </div>
               <div class="p-ov p-zonepill" id="place-zonepill" hidden>
                 <span id="place-zonepill-name"></span>
@@ -568,7 +612,7 @@
       </section>
 
       <!-- DESKTOP -->
-      <section class="surface" id="surface-desktop" role="tabpanel" aria-labelledby="mode-desktop">
+      <section class="surface" id="surface-desktop" aria-label="Desktop">
         <div class="desk">
           <div class="desk-head">
             <div class="eyebrow">Desktop</div>
