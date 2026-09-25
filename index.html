@@ -152,10 +152,17 @@
     .place-wrap { display: flex; flex-direction: column; gap: 14px; flex: 1; min-height: 0; }
     .place-head { flex: none; display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .place-head .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: .2em; text-transform: uppercase; color: var(--sage); }
+    /* Empty state (2026-09 gear pass): shown INSIDE the map stage rather than
+       replacing it, so the toolbar + gear stay reachable with no map loaded
+       — the import/export controls are never hidden (admin-control rule). */
     .place-empty {
-      flex: 1; display: flex; flex-direction: column; align-items: flex-start; justify-content: center;
-      gap: 14px; max-width: 46ch; color: var(--ink-dim);
+      position: absolute; inset: 0; z-index: 2; pointer-events: none;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 8px; padding: 72px 24px 24px; text-align: center; color: var(--ink-dim);
     }
+    .place-empty p { margin: 0; max-width: 38ch; }
+    .place-empty .lead { color: var(--ink); font-size: 16px; }
+    .place-empty .hint { font-size: 13px; line-height: 1.5; }
     .place-empty[hidden] { display: none; }
     .place-stage {
       position: relative; flex: 1; min-height: 360px; border: 1px solid var(--line); border-radius: 4px;
@@ -197,7 +204,7 @@
     .p-pin.dragging { cursor: grabbing; filter: drop-shadow(0 0 3px var(--sage)); }
     .p-pin.pending { stroke: var(--sage); stroke-width: .6; stroke-dasharray: .3 .25; }
 
-    .p-toolbar { position: absolute; left: 14px; top: 12px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+    .p-toolbar { position: absolute; left: 14px; top: 12px; z-index: 6; display: flex; align-items: center; gap: 8px; pointer-events: none; }
     .p-logbtn {
       pointer-events: auto; cursor: pointer; height: 34px; box-sizing: border-box;
       display: flex; align-items: center; gap: 7px; padding: 0 13px; font-family: var(--mono);
@@ -207,27 +214,60 @@
     .p-logbtn .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sage); }
     .p-logbtn[aria-pressed="true"] { background: var(--sage); color: var(--ground); border-color: var(--sage); }
     .p-logbtn[aria-pressed="true"] .dot { background: var(--ground); }
+    /* No map loaded: Log Mode / Reposition / zoom are greyed out (never
+       hidden), with the reason in their title + the empty-state note. */
+    .p-logbtn:disabled, .p-viewctl button:disabled { opacity: .4; cursor: not-allowed; }
 
-    /* Map data tools: the map-import / zone-sync controls, relocated here
-       (2026-07-17c) from the place-head row so they're always reachable —
-       never gated on state, per the standing admin-control rule — but
-       "lower-key" as asked, rather than competing for space in the header. */
+    /* Map data tools (gear). Relocated here 2026-07-17c; reworked 2026-09 into
+       a small two-section panel — Map (imports) and Backup (export) — that
+       opens directly under the toolbar on the gear's own side, above the
+       compass and pills. Never gated on state (admin-control rule). */
     .p-gearbtn {
-      pointer-events: auto; cursor: pointer; width: 34px; height: 34px;
+      position: relative; pointer-events: auto; cursor: pointer; width: 34px; height: 34px;
       display: flex; align-items: center; justify-content: center;
       background: var(--ground-2); color: var(--ink); border: 1px solid var(--line); border-radius: 50%;
       font-size: 15px; line-height: 1; transition: color .15s ease, border-color .15s ease;
     }
     .p-gearbtn:hover { border-color: var(--sage); color: var(--sage); }
     .p-gearbtn[aria-expanded="true"] { background: var(--sage); color: var(--ground); border-color: var(--sage); }
+    /* Unseen-result dot: an import/export finished while the panel was closed. */
+    .p-geardot {
+      position: absolute; top: -1px; right: -1px; width: 9px; height: 9px; border-radius: 50%;
+      background: var(--sage); border: 2px solid var(--ground); box-sizing: border-box;
+    }
+    .p-geardot[hidden] { display: none; }
     .p-gearmenu {
-      top: 56px; right: 14px; pointer-events: auto; /* right-anchored: never collides with the left-anchored zone/move pills */
-      display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
-      padding: 14px; min-width: 210px;
+      top: 56px; left: 14px; z-index: 8; pointer-events: auto; box-sizing: border-box;
+      width: min(340px, calc(100% - 28px)); max-height: calc(100% - 70px); overflow-y: auto;
+      display: flex; flex-direction: column; gap: 14px; padding: 16px;
       background: var(--ground-2); border: 1px solid var(--line); border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(6, 10, 8, .45);
     }
     .p-gearmenu[hidden] { display: none; }
-    .p-gearmenu .btn-ghost { width: 100%; }
+    .p-gearsec { display: flex; flex-direction: column; gap: 8px; }
+    .p-gearsec + .p-gearsec { border-top: 1px solid var(--line); padding-top: 14px; }
+    .p-gearhead { font-family: var(--sans); font-size: 13px; font-weight: 600; color: var(--ink); }
+    .p-gearmenu .btn-ghost { width: 100%; padding: 11px 14px; font-size: 12px; }
+    .p-gearmenu .btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
+    .p-gearmenu .btn-ghost:disabled:hover { color: var(--ink-dim); border-color: var(--line); }
+    .p-gearnote { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-dim); }
+    .p-gearnote[hidden] { display: none; }
+    /* Inline two-click confirm for the destructive map replace. Clay is the
+       palette's warning colour (chrome), not a data colour. */
+    .p-gearconfirm { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--clay); border-radius: 6px; }
+    .p-gearconfirm[hidden] { display: none; }
+    .p-gearconfirm p { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink); }
+    .p-gearconfirm .row { display: flex; gap: 8px; }
+    .p-gearconfirm .row .btn-ghost { flex: 1; }
+    .p-gearmenu .btn-ghost.btn-replace { color: var(--clay); border-color: var(--clay); }
+    .p-gearstatus {
+      border-top: 1px solid var(--line); padding-top: 12px;
+      font-size: 12.5px; line-height: 1.45; color: var(--ink-dim); overflow-wrap: anywhere;
+    }
+    .p-gearstatus[hidden] { display: none; }
+    .p-gearstatus.err { color: var(--clay); }
+    .p-gearstatus .when { display: block; margin-top: 4px; font-size: 11px; opacity: .75; }
+    .p-gearbtn:focus-visible, .p-gearmenu button:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
 
     /* Zone pill: persistent while zoomed into a zone (Log Mode). Sits just
        below the toolbar, left-aligned — top-center collided with the
@@ -551,27 +591,44 @@
             <div class="place-head">
               <div class="eyebrow">Field · Place</div>
             </div>
-            <div class="place-empty" id="place-empty" hidden>
-              <p>No yard geometry saved yet. Import a map export to draw the plan here.</p>
-            </div>
-            <div class="place-stage" id="place-stage" hidden>
+            <div class="place-stage" id="place-stage">
               <svg id="place-map" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet"></svg>
+              <div class="place-empty" id="place-empty" hidden>
+                <p class="lead">No yard map yet.</p>
+                <p class="hint">Open the ⚙ tools and choose Import map data. Log Mode, Reposition and zoom switch on once a map is loaded.</p>
+              </div>
               <div class="p-logtint" aria-hidden="true"></div>
               <div class="p-toolbar">
-                <button class="p-logbtn" id="place-logmode-btn" type="button" aria-pressed="false">
+                <button class="p-logbtn" id="place-logmode-btn" type="button" aria-pressed="false" disabled title="Needs a map">
                   <span class="dot"></span><span id="place-logmode-lbl">Log Mode</span>
                 </button>
-                <button class="p-logbtn" id="place-repos-btn" type="button" aria-pressed="false">
+                <button class="p-logbtn" id="place-repos-btn" type="button" aria-pressed="false" disabled title="Needs a map">
                   <span class="dot"></span><span id="place-repos-lbl">Reposition</span>
                 </button>
-                <button class="p-gearbtn" id="place-gear-btn" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Map data tools">⚙</button>
+                <button class="p-gearbtn" id="place-gear-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="place-gearmenu" aria-label="Map data tools">⚙<span class="p-geardot" id="place-gear-dot" hidden></span></button>
               </div>
-              <div class="p-ov p-gearmenu" id="place-gearmenu" hidden>
-                <button id="place-import-btn" class="btn-ghost" type="button">Import map data</button>
-                <input type="file" id="place-import-file" accept="application/json,.json" hidden />
-                <button id="place-import-zones-btn" class="btn-ghost" type="button" hidden>Import zones</button>
-                <input type="file" id="place-import-zones-file" accept="application/json,.json" hidden />
-                <span class="count" id="place-import-status"></span>
+              <div class="p-ov p-gearmenu" id="place-gearmenu" role="dialog" aria-label="Map data tools" hidden>
+                <div class="p-gearsec">
+                  <div class="p-gearhead">Map</div>
+                  <button id="place-import-btn" class="btn-ghost" type="button">Import map data</button>
+                  <input type="file" id="place-import-file" accept="application/json,.json" hidden />
+                  <div class="p-gearconfirm" id="place-import-confirm" hidden>
+                    <p id="place-import-confirm-msg"></p>
+                    <div class="row">
+                      <button type="button" class="btn-ghost btn-replace" id="place-import-confirm-yes">Replace map</button>
+                      <button type="button" class="btn-ghost" id="place-import-confirm-no">Cancel</button>
+                    </div>
+                  </div>
+                  <button id="place-import-zones-btn" class="btn-ghost" type="button">Import zones</button>
+                  <input type="file" id="place-import-zones-file" accept="application/json,.json" hidden />
+                  <p class="p-gearnote" id="place-import-zones-note" hidden>Needs a map first. Import map data above, then sync zones.</p>
+                </div>
+                <div class="p-gearsec">
+                  <div class="p-gearhead">Backup</div>
+                  <button id="place-export-btn" class="btn-ghost" type="button">Export backup</button>
+                  <p class="p-gearnote">Downloads everything in SAGE as one dated file. Photos themselves stay on your camera roll.</p>
+                </div>
+                <div class="p-gearstatus" id="place-import-status" role="status" aria-live="polite" hidden></div>
               </div>
               <div class="p-ov p-zonepill" id="place-zonepill" hidden>
                 <span id="place-zonepill-name"></span>
@@ -595,8 +652,8 @@
                 </g>
               </svg>
               <div class="p-viewctl">
-                <button id="place-zin" type="button" aria-label="Zoom in">+</button>
-                <button id="place-zout" type="button" aria-label="Zoom out">&minus;</button>
+                <button id="place-zin" type="button" aria-label="Zoom in" disabled title="Needs a map">+</button>
+                <button id="place-zout" type="button" aria-label="Zoom out" disabled title="Needs a map">&minus;</button>
               </div>
               <div class="p-readout" id="place-readout"></div>
             </div>

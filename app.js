@@ -44,7 +44,10 @@
     placeZin: byId("place-zin"), placeZout: byId("place-zout"), placeReadout: byId("place-readout"),
 
     // Map data tools: gear icon + dropdown holding the (relocated, 2026-07-17c) import controls
-    gearBtn: byId("place-gear-btn"), gearMenu: byId("place-gearmenu"),
+    gearBtn: byId("place-gear-btn"), gearMenu: byId("place-gearmenu"), gearDot: byId("place-gear-dot"),
+    importConfirm: byId("place-import-confirm"), importConfirmMsg: byId("place-import-confirm-msg"),
+    importConfirmYes: byId("place-import-confirm-yes"), importConfirmNo: byId("place-import-confirm-no"),
+    importZonesNote: byId("place-import-zones-note"), exportBtn: byId("place-export-btn"),
 
     // Add plant modal
     addModal: byId("add-modal"), closeAdd: byId("close-add"), cancelAdd: byId("cancel-add"),
@@ -479,25 +482,29 @@
     el.placeImportZonesBtn.addEventListener("click", function () { el.placeImportZonesFile.click(); });
     el.placeImportZonesFile.addEventListener("change", onSyncZonesFile);
 
-    // Map data tools: gear icon opens/closes the relocated import controls.
-    // Never gated on state (per the standing admin-control rule) — just
-    // tucked behind a tap instead of sitting in the header row.
+    el.importConfirmYes.addEventListener("click", onConfirmMapImport);
+    el.importConfirmNo.addEventListener("click", hideImportConfirm);
+    el.exportBtn.addEventListener("click", onExportBackup);
+
+    // Map data tools: the gear opens/closes a small panel (Map + Backup).
+    // Never gated on state (standing admin-control rule).
     el.gearBtn.addEventListener("click", function () {
-      var opening = el.gearMenu.hidden;
-      el.gearMenu.hidden = !opening;
-      el.gearBtn.setAttribute("aria-expanded", opening ? "true" : "false");
+      if (el.gearMenu.hidden) openGear(); else closeGear(false);
     });
-    document.addEventListener("click", function (e) {
+    // Outside-tap dismissal runs on pointerdown in the CAPTURE phase, so it
+    // sees the tap before the map does. A tap on the map that closes the
+    // panel is stopped here and never reaches the map's own pointer
+    // handlers — otherwise "tap away to close" would also drop a plant (or
+    // open the zone modal in Log Mode). Taps on other controls (toolbar,
+    // nav, zoom) close the panel AND still do their own thing.
+    document.addEventListener("pointerdown", function (e) {
       if (el.gearMenu.hidden) return;
-      if (el.gearMenu.contains(e.target) || e.target === el.gearBtn) return;
-      el.gearMenu.hidden = true;
-      el.gearBtn.setAttribute("aria-expanded", "false");
-    });
+      if (el.gearMenu.contains(e.target) || el.gearBtn.contains(e.target)) return;
+      closeGear(false);
+      if (el.placeMap.contains(e.target)) e.stopPropagation();
+    }, true);
     document.addEventListener("keydown", function (e) {
-      if (e.key === "Escape" && !el.gearMenu.hidden) {
-        el.gearMenu.hidden = true;
-        el.gearBtn.setAttribute("aria-expanded", "false");
-      }
+      if (e.key === "Escape" && !el.gearMenu.hidden) closeGear(true);
     });
 
     el.placeZin.addEventListener("click", function () { placeZoomAt(placeCenterX(), placeCenterY(), 1 / 1.3); });
@@ -661,6 +668,7 @@
       var snapshot = await sage.getMapData();
       place.snapshot = (snapshot && Array.isArray(snapshot.regions) && snapshot.regions.length) ? snapshot : null;
       if (place.snapshot) { buildPlaceSVG(place.snapshot); await renderPins(); }
+      else { el.placeMap.innerHTML = ""; place.view = null; }
       showPlaceEmpty(!place.snapshot);
       await refreshZoneImportVisibility();
     } finally {
@@ -668,13 +676,29 @@
     }
   }
 
+  // "Import zones" is always visible (admin-control rule). With no map it's
+  // disabled and says why inline, rather than silently disappearing.
   async function refreshZoneImportVisibility() {
-    el.placeImportZonesBtn.hidden = !place.snapshot;
+    el.placeImportZonesBtn.hidden = false;
+    el.placeImportZonesBtn.disabled = !place.snapshot;
+    el.importZonesNote.hidden = !!place.snapshot;
   }
 
+  // The map stage itself is never hidden, so the toolbar + gear stay
+  // reachable with no map (import and export must work from empty). With no
+  // map, the empty note shows inside the stage and the map-dependent
+  // controls are greyed out with a reason, not hidden.
   function showPlaceEmpty(isEmpty) {
     el.placeEmpty.hidden = !isEmpty;
-    el.placeStage.hidden = isEmpty;
+    el.placeStage.hidden = false;
+    if (isEmpty) {
+      if (place.logMode) toggleLogMode();
+      if (place.reposMode) toggleReposMode();
+    }
+    [el.logModeBtn, el.reposBtn, el.placeZin, el.placeZout].forEach(function (b) {
+      b.disabled = isEmpty;
+      if (isEmpty) b.title = "Needs a map"; else b.removeAttribute("title");
+    });
   }
 
   function buildPlaceSVG(snapshot) {
@@ -1161,34 +1185,142 @@
     requestAnimationFrame(step);
   }
 
-  // ── Place: import ────────────────────────────────────────────────────────────
-  // One-time (and re-runnable) bootstrap: read a map export, save it into the
-  // gated map_data row via data.js, then redraw from what's now in Supabase —
-  // proving the whole load path works, not just the file parse.
+  // ── Place: map data tools (gear panel) ─────────────────────────────────────
+  // Panel open/close, the shared status line, and the three operations it
+  // holds: map import, zone sync, backup export.
+
+  function openGear() {
+    el.gearMenu.hidden = false;
+    el.gearBtn.setAttribute("aria-expanded", "true");
+    el.gearDot.hidden = true;               // any unseen result is now seen
+    var first = el.gearMenu.querySelector("button:not([disabled])");
+    if (first) first.focus();
+  }
+  function closeGear(returnFocus) {
+    if (el.gearMenu.hidden) return;
+    el.gearMenu.hidden = true;
+    el.gearBtn.setAttribute("aria-expanded", "false");
+    hideImportConfirm();                    // a half-armed replace never survives a close
+    if (returnFocus) el.gearBtn.focus();
+  }
+
+  // One status line for every operation. Final results carry the time they
+  // happened so an old message can't pass for a new one; everything clears on
+  // reload (it's plain DOM). If a result lands while the panel is closed, the
+  // gear shows a dot until it's reopened.
+  function setGearStatus(msg, opts) {
+    opts = opts || {};
+    var box = el.placeImportStatus;
+    box.textContent = "";
+    box.hidden = false;
+    box.classList.toggle("err", !!opts.error);
+    box.appendChild(document.createTextNode(msg));
+    if (!opts.busy) {
+      var when = document.createElement("span");
+      when.className = "when";
+      when.textContent = (opts.error ? "Failed at " : "Done at ") +
+        new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+      box.appendChild(when);
+      if (el.gearMenu.hidden) el.gearDot.hidden = false;
+    }
+  }
+  function errText(err) { return String((err && err.message) || err || "unknown error"); }
+
+  function setGearBusy(busy) {
+    el.placeImportBtn.disabled = busy;
+    el.placeImportZonesBtn.disabled = busy || !place.snapshot;
+    el.exportBtn.disabled = busy;
+    el.importConfirmYes.disabled = busy;
+  }
+
+  // Backups carry a top-level `sage_export` marker (see data.js exportJSON),
+  // so either import can recognise one and refuse it by name.
+  function isBackupFile(parsed) { return !!(parsed && !Array.isArray(parsed) && parsed.sage_export); }
+
+  function readJSONFile(file, cb) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      var parsed;
+      try { parsed = JSON.parse(reader.result); }
+      catch (err) { setGearStatus("Couldn't read that file. It isn't valid JSON.", { error: true }); return; }
+      cb(parsed);
+    };
+    reader.onerror = function () { setGearStatus("Couldn't open that file.", { error: true }); };
+    reader.readAsText(file);
+  }
+
+  // ── Map import ──
+  // Replacing an existing map is destructive: it swaps the whole map_data
+  // snapshot, which clears every region's zone link unless the new file
+  // carries its own. So with a map already loaded, a validated file is held
+  // as pending and only written after an inline "Replace map" confirm that
+  // states the consequence. First-ever import (no map yet) needs no confirm.
+  var pendingMapImport = null;
+
   function onImportFile(e) {
     var file = e.target.files[0];
     e.target.value = "";
     if (!file) return;
-    var reader = new FileReader();
-    reader.onload = async function () {
-      var parsed;
-      try { parsed = JSON.parse(reader.result); }
-      catch (err) { el.placeImportStatus.textContent = "Couldn't read that file — not valid JSON."; return; }
-      var snapshot = parsed.snapshot || parsed; // accept either the wrapped export or a bare snapshot
-      if (!snapshot || !Array.isArray(snapshot.regions) || !snapshot.regions.length) {
-        el.placeImportStatus.textContent = "That file doesn't look like a map export.";
+    hideImportConfirm();
+    readJSONFile(file, function (parsed) {
+      if (isBackupFile(parsed)) {
+        setGearStatus("That's a SAGE backup, not a map export. Nothing was imported.", { error: true });
         return;
       }
-      el.placeImportBtn.disabled = true;
-      await sage.saveMapData(snapshot);
-      await ensurePlaceLoaded();
-      el.placeImportBtn.disabled = false;
-      el.placeImportStatus.textContent = plural(snapshot.regions.length, "region") + " imported.";
-    };
-    reader.readAsText(file);
+      var snapshot = (parsed && parsed.snapshot) || parsed; // wrapped export or bare snapshot
+      if (!snapshot || !Array.isArray(snapshot.regions) || !snapshot.regions.length) {
+        setGearStatus("That file doesn't look like a map export. Nothing was imported.", { error: true });
+        return;
+      }
+      if (!place.snapshot) { applyMapImport(snapshot); return; }
+
+      pendingMapImport = snapshot;
+      var fileLinks = snapshot.regions.filter(function (r) { return r.zone_id; }).length;
+      el.importConfirmMsg.textContent =
+        "This replaces the current map (" + plural(place.snapshot.regions.length, "region") + ") with " +
+        plural(snapshot.regions.length, "region") + " from " + file.name + ". " +
+        (fileLinks
+          ? "Zone links will be replaced by the " + fileLinks + " in the file."
+          : "Every zone link will be cleared. Run Import zones afterwards to relink them.");
+      el.importConfirm.hidden = false;
+      el.importConfirmYes.focus();
+    });
+  }
+  function hideImportConfirm() {
+    pendingMapImport = null;
+    el.importConfirm.hidden = true;
+  }
+  function onConfirmMapImport() {
+    var snapshot = pendingMapImport;
+    hideImportConfirm();
+    if (snapshot) applyMapImport(snapshot);
   }
 
-  // Repeatable sync (replaces the old one-time bootstrap): reconciles a
+  async function applyMapImport(snapshot) {
+    setGearBusy(true);
+    setGearStatus("Importing map…", { busy: true });
+    try {
+      try { await sage.saveMapData(snapshot); }
+      catch (err) {
+        setGearStatus("Map import failed: " + errText(err) + ". The previous map is unchanged.", { error: true });
+        return;
+      }
+      try { await ensurePlaceLoaded(); }
+      catch (err) {
+        setGearStatus("Map saved, but it couldn't be redrawn: " + errText(err) + ". Reload SAGE to see it.", { error: true });
+        return;
+      }
+      var fileLinks = snapshot.regions.filter(function (r) { return r.zone_id; }).length;
+      var haveZones = Object.keys(state.names.zones || {}).length > 0;
+      setGearStatus(plural(snapshot.regions.length, "region") + " imported." +
+        (!fileLinks && haveZones ? " Zone links were cleared. Run Import zones to relink them." : ""));
+    } finally {
+      setGearBusy(false);
+    }
+  }
+
+  // ── Zone sync ──
+  // Repeatable sync (replaced the old one-time bootstrap): reconciles a
   // zones export — either the raw array the old bootstrap used, or a full
   // "SAGE Garden Map" file (has a top-level .zones array with .members lists
   // of region ids) — against what's really in Supabase and whatever map
@@ -1196,34 +1328,46 @@
   //
   // Zones are matched by NAME, never re-inserted for a name that already
   // exists — so this is safe to run again after every DXF re-bake or zone
-  // edit, unlike the old bootstrap which would mint 19 duplicate rows on a
-  // second run. Region → zone_id links are always fully re-derived from the
-  // file (clean slate first), since that's the only way a region dropped
-  // from every zone in the file ends up correctly unzoned rather than
-  // keeping a stale link from before.
-  async function onSyncZonesFile(e) {
+  // edit. Region → zone_id links are always fully re-derived from the file
+  // (clean slate first), since that's the only way a region dropped from
+  // every zone in the file ends up correctly unzoned.
+  //
+  // 2026-09: the relink now works on a COPY of the snapshot, so a failed save
+  // can't leave the on-screen map showing links the database doesn't have;
+  // each phase reports its own failure so a partial run is never silent.
+  function onSyncZonesFile(e) {
     var file = e.target.files[0];
     e.target.value = "";
-    if (!file || !place.snapshot) return;
-    var reader = new FileReader();
-    reader.onload = async function () {
-      var parsed;
-      try { parsed = JSON.parse(reader.result); }
-      catch (err) { el.placeImportStatus.textContent = "Couldn't read that file — not valid JSON."; return; }
-      var zonesIn = Array.isArray(parsed) ? parsed : parsed.zones;
-      if (!Array.isArray(zonesIn) || !zonesIn.length) {
-        el.placeImportStatus.textContent = "That file doesn't look like a zones export.";
+    if (!file) return;
+    if (!place.snapshot) {
+      setGearStatus("Zones need a map first. Import map data, then sync zones.", { error: true });
+      return;
+    }
+    readJSONFile(file, function (parsed) {
+      if (isBackupFile(parsed)) {
+        setGearStatus("That's a SAGE backup, not a zones export. Nothing was synced.", { error: true });
         return;
       }
-      el.placeImportZonesBtn.disabled = true;
+      var zonesIn = Array.isArray(parsed) ? parsed : (parsed && parsed.zones);
+      if (!Array.isArray(zonesIn) || !zonesIn.length) {
+        setGearStatus("That file doesn't look like a zones export. Nothing was synced.", { error: true });
+        return;
+      }
+      runZoneSync(zonesIn);
+    });
+  }
 
+  async function runZoneSync(zonesIn) {
+    setGearBusy(true);
+    setGearStatus("Syncing " + plural(zonesIn.length, "zone") + "…", { busy: true });
+    var phase = "read", created = 0, updated = 0, unchanged = 0;
+    try {
       var existing = await sage.query({ entity: "zones" });
       var byName = {};
       existing.forEach(function (z) { byName[z.name] = z; });
-
-      var created = 0, updated = 0, unchanged = 0;
       var nameToRealId = {};
 
+      phase = "zones";
       for (var i = 0; i < zonesIn.length; i++) {
         var z = zonesIn[i];
         var have = byName[z.name];
@@ -1245,33 +1389,89 @@
         }
       }
 
-      place.snapshot.regions.forEach(function (r) { r.zone_id = null; });
-      var linked = 0;
-      var missingRegions = [];
+      var snap = JSON.parse(JSON.stringify(place.snapshot));
+      snap.regions.forEach(function (r) { r.zone_id = null; });
+      var linked = 0, missingRegions = [];
       zonesIn.forEach(function (z) {
         var realId = nameToRealId[z.name];
         (z.members || []).forEach(function (regionId) {
-          var region = place.snapshot.regions.find(function (rr) { return rr.id === regionId; });
+          var region = snap.regions.find(function (rr) { return rr.id === regionId; });
           if (region) { region.zone_id = realId; linked++; }
           else missingRegions.push(regionId);
         });
       });
 
-      await sage.saveMapData(place.snapshot);
+      phase = "links";
+      await sage.saveMapData(snap);
+
+      phase = "redraw";
       await loadNames();       // so zone names resolve in the add-plant modal
       await ensurePlaceLoaded();
-      el.placeImportZonesBtn.disabled = false;
 
       var msg = plural(linked, "region") + " linked across " + plural(zonesIn.length, "zone") +
         " (" + created + " new, " + updated + " updated, " + unchanged + " unchanged).";
       if (missingRegions.length) {
         msg += " " + plural(missingRegions.length, "region") +
-          " in the file weren't found on the current map — worth a spot check: " +
+          " in the file weren't found on the current map, worth a spot check: " +
           missingRegions.slice(0, 6).join(", ") + (missingRegions.length > 6 ? "…" : "") + ".";
       }
-      el.placeImportStatus.textContent = msg;
-    };
-    reader.readAsText(file);
+      setGearStatus(msg);
+    } catch (err) {
+      var why = errText(err);
+      var msgs = {
+        read: "Zone sync failed before changing anything: " + why + ".",
+        zones: "Zone sync stopped partway: " + why + ". " + (created + updated) +
+          " zone row(s) were already created or updated, but region links weren't saved. It's safe to run Import zones again.",
+        links: "Zone rows were synced, but region links couldn't be saved: " + why + ". It's safe to run Import zones again.",
+        redraw: "Zones synced and saved, but the map couldn't be redrawn: " + why + ". Reload SAGE to see them.",
+      };
+      setGearStatus(msgs[phase], { error: true });
+    } finally {
+      setGearBusy(false);
+    }
+  }
+
+  // ── Backup export ──
+  // Downloads data.js exportJSON() as sage-backup-YYYY-MM-DD.json (local
+  // date). Refuses to download anything if a known table is missing from the
+  // dump — a partial backup that looks complete is worse than none. Keep
+  // BACKUP_TABLES in step with the schema when a table is added.
+  var BACKUP_TABLES = ["taxa", "zones", "individuals", "observations", "sightings", "weather",
+    "conditions", "actions", "photos", "absences", "map_data"];
+
+  function localDateStamp(d) {
+    d = d || new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  async function onExportBackup() {
+    if (!sage) { setGearStatus("SAGE is still starting up. Try again in a moment.", { error: true }); return; }
+    setGearBusy(true);
+    setGearStatus("Preparing backup…", { busy: true });
+    try {
+      var payload = await sage.exportJSON();
+      var data = payload && payload.data;
+      var missing = BACKUP_TABLES.filter(function (t) { return !data || !Array.isArray(data[t]); });
+      if (missing.length) throw new Error("the export came back without " + missing.join(", "));
+      var rows = BACKUP_TABLES.reduce(function (n, t) { return n + data[t].length; }, 0);
+
+      var name = "sage-backup-" + localDateStamp() + ".json";
+      var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = name; a.hidden = true;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+
+      setGearStatus("Backup downloaded: " + name + " (" + plural(rows, "row") + " across " +
+        BACKUP_TABLES.length + " tables).");
+    } catch (err) {
+      setGearStatus("Backup failed: " + errText(err) + ". Nothing was downloaded.", { error: true });
+    } finally {
+      setGearBusy(false);
+    }
   }
 
   // ── Desktop read ──────────────────────────────────────────────────────────────
