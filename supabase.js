@@ -15,14 +15,17 @@
 // huge, that single method is the place to push a filter down to Postgres.)
 // ============================================================================
 
-const KEYED_ON_DATE = { weather: "date" }; // every other table keys on `id`
+// Every table keys on `id` except weather (natural key `date`) and
+// taxon_pairings (primary key is the pair taxon_a + taxon_b).
+const KEY_COLUMN = { weather: "date", taxon_pairings: "taxon_a" };
 
 export function SupabaseBackend(client) {
   const TABLES = [
     "taxa", "zones", "individuals", "observations", "sightings",
     "weather", "conditions", "actions", "photos", "absences", "map_data",
+    "taxon_colours", "taxon_pairings",   // 2026-09-25: species colours + pairings
   ];
-  const keyOf = (t) => KEYED_ON_DATE[t] || "id";
+  const keyOf = (t) => KEY_COLUMN[t] || "id";
 
   async function selectAll(table) {
     const { data, error } = await client.from(table).select("*");
@@ -64,12 +67,21 @@ export function SupabaseBackend(client) {
     async load(data) {
       // Restore: clear every table (children first for FK safety), then insert
       // (parents first). UUIDs carry all links, so nothing is remapped.
+      // taxon_colours / taxon_pairings point at taxa, so they clear before it and
+      // restore after it. Parent links WITHIN taxa (parent_id) are a deferred FK,
+      // so taxa clears and restores in one statement each, in any row order.
+      // A backup made before a table existed simply has no key for it: `|| []`
+      // below restores it as empty.
       const childFirst = [
+        "taxon_colours", "taxon_pairings",
         "photos", "actions", "observations", "sightings", "conditions",
         "absences", "weather", "individuals", "zones", "taxa",
       ];
       for (const t of childFirst) {
-        const { error } = await client.from(t).delete().neq(keyOf(t), "__sage_never__");
+        // "delete every row": the key column is a primary key, so never null.
+        // (Was .neq(key, "__sage_never__"), which Postgres rejects on uuid/date
+        // columns: the literal isn't a valid uuid or date.)
+        const { error } = await client.from(t).delete().not(keyOf(t), "is", null);
         if (error) throw new Error("clear " + t + ": " + error.message);
       }
       for (const t of [...childFirst].reverse()) {

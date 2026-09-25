@@ -1613,7 +1613,8 @@
   // dump — a partial backup that looks complete is worse than none. Keep
   // BACKUP_TABLES in step with the schema when a table is added.
   var BACKUP_TABLES = ["taxa", "zones", "individuals", "observations", "sightings", "weather",
-    "conditions", "actions", "photos", "absences", "map_data"];
+    "conditions", "actions", "photos", "absences", "map_data",
+    "taxon_colours", "taxon_pairings"]; // 2026-09-25: species colours + pairings
 
   function localDateStamp(d) {
     d = d || new Date();
