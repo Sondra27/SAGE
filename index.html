@@ -188,7 +188,8 @@
     .p-ov { position: absolute; pointer-events: none; color: var(--ink); }
     .p-compass { top: 12px; right: 14px; width: 52px; height: 52px; opacity: .9; }
 
-    /* Log Mode is off by default: taps behave like Beat 2 (select / add-plant).
+    /* Log Mode is off by default: taps select a pin, zoom to a zone, or (inside
+       the selected zone) add a plant — zone-gated placement, 2026-09-25.
        On, a low-opacity sage wash covers the whole map — visible regardless
        of zoom level, unlike a container-edge border which can scroll out of
        view once you're zoomed into a zone. Reuses the chrome accent, never
@@ -311,6 +312,21 @@
     .p-movepill .move-confirm { color: var(--sage); }
     .p-movepill .move-cancel { color: var(--ink-dim); }
     .p-movepill button:hover { opacity: .8; }
+    .p-movepill button[disabled] { opacity: .3; cursor: default; }
+    /* 2026-09-25: zone picker lives in the pill. Name truncates so a long
+       plant name can't push ✓/✕ off a phone screen; the warning wraps onto
+       its own line under the controls. */
+    .p-movepill { flex-wrap: wrap; max-width: calc(100% - 28px); border-radius: 18px; }
+    .p-movepill .move-name { overflow: hidden; text-overflow: ellipsis; max-width: 12em; }
+    .p-movepill select {
+      appearance: none; -webkit-appearance: none; cursor: pointer;
+      font: inherit; letter-spacing: inherit; color: var(--ink);
+      background: var(--ground-2); border: 1px solid var(--line); border-radius: 12px;
+      padding: 4px 10px; max-width: 11em;
+    }
+    .p-movepill select:focus-visible { outline: 2px solid var(--sage); outline-offset: 1px; }
+    .p-movepill .move-warn { flex-basis: 100%; color: var(--clay); font-size: 10.5px; padding: 0 0 2px; }
+    .p-movepill .move-warn[hidden] { display: none; }
 
     /* Zone arrow-toggle: jumps to the nearest zone (by centroid) in that
        screen direction. Only visible while zoomed into a zone; disabled when
@@ -649,9 +665,11 @@
                 <button type="button" id="place-zonepill-close" aria-label="Exit zone view">✕</button>
               </div>
               <div class="p-ov p-movepill" id="place-movepill" hidden>
-                <span>Move pin?</span>
+                <span class="move-name" id="place-move-name">Move pin →</span>
+                <select id="place-move-zone" aria-label="Zone for this plant"></select>
                 <button type="button" class="move-confirm" id="place-move-confirm" aria-label="Confirm move">✓</button>
                 <button type="button" class="move-cancel" id="place-move-cancel" aria-label="Cancel move">✕</button>
+                <span class="move-warn" id="place-move-warn" role="status" aria-live="polite" hidden></span>
               </div>
               <button class="p-zonearrow dir-up"    id="place-zone-up"    type="button" aria-label="Zone north" hidden>↑</button>
               <button class="p-zonearrow dir-down"  id="place-zone-down"  type="button" aria-label="Zone south" hidden>↓</button>

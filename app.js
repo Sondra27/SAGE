@@ -64,6 +64,7 @@
     reposBtn: byId("place-repos-btn"), reposLbl: byId("place-repos-lbl"),
     movePill: byId("place-movepill"),
     moveConfirm: byId("place-move-confirm"), moveCancel: byId("place-move-cancel"),
+    moveName: byId("place-move-name"), moveZone: byId("place-move-zone"), moveWarn: byId("place-move-warn"),
     zoneArrows: {
       up: byId("place-zone-up"), down: byId("place-zone-down"),
       left: byId("place-zone-left"), right: byId("place-zone-right"),
@@ -106,11 +107,16 @@
     // Pin drag-to-reposition: off by default, mutually exclusive with Log
     // Mode. dragCandidateId is set on pointerdown over a pin while reposMode
     // is on; dragging flips true once the move threshold is crossed (so a
-    // plain tap on a pin still just selects it, same as Beat 2). pendingMove
+    // plain tap on a pin opens its move pill instead). pendingMove
     // holds the dropped-but-unconfirmed position until the move pill's
     // confirm/cancel is tapped.
     reposMode: false, dragCandidateId: null, dragging: false, dragOrig: null,
     pendingMove: null,
+    // pinched: set once a gesture has had two fingers down, so lifting the
+    // last finger after a pinch-zoom never counts as a tap (2026-09-25 fix:
+    // it used to open the add-plant modal). pinZone: each pin's zone_id, as
+    // loaded — the reposition pill defaults to it.
+    pinched: false, pinZone: {},
   };
 
   main().catch(function (err) {
@@ -524,11 +530,13 @@
         place.downFeet = place.view ? placeFeetAt(e.clientX, e.clientY) : null;
         // Reposition Mode: pointerdown on a pin is a drag candidate, not a
         // pan candidate. Only actually becomes a drag once the same 12px
-        // moved-threshold is crossed below, so a plain tap on a pin still
-        // just selects it rather than always "picking it up."
+        // moved-threshold is crossed below, so a plain tap on a pin opens
+        // its move pill (zone picker) rather than always "picking it up."
         place.dragCandidateId = (place.reposMode && place.downTarget && place.downTarget.classList.contains("p-pin"))
           ? place.downTarget.dataset.individualId : null;
       } else if (place.pointers.size === 2) {
+        place.pinched = true;
+        if (!place.dragging) place.dragCandidateId = null;
         var p2 = Array.from(place.pointers.values());
         place.pinchDist = Math.hypot(p2[0].x - p2[1].x, p2[0].y - p2[1].y);
       }
@@ -557,6 +565,10 @@
           var feet = placeFeetAt(e.clientX, e.clientY);
           var pin = place.pins[place.dragCandidateId];
           if (pin) { pin.setAttribute("cx", feet.x); pin.setAttribute("cy", feet.y); }
+          if (place.pendingMove && place.pendingMove.id === place.dragCandidateId) {
+            place.pendingMove.newX = feet.x; place.pendingMove.newY = feet.y;
+            refreshMovePill();
+          }
           return;
         }
       }
@@ -580,8 +592,8 @@
       el.placeMap.classList.remove("grabbing");
       if (place.pointers.size === 0) {
         if (place.dragging) finishPinDrag();
-        else if (!place.panning) onPlaceTap();
-        place.downXY = null; place.panning = false;
+        else if (!place.panning && !place.pinched) onPlaceTap();
+        place.downXY = null; place.panning = false; place.pinched = false;
         place.dragging = false; place.dragCandidateId = null;
       }
     }
@@ -601,6 +613,7 @@
     el.reposBtn.addEventListener("click", toggleReposMode);
     el.moveConfirm.addEventListener("click", confirmPendingMove);
     el.moveCancel.addEventListener("click", cancelPendingMove);
+    el.moveZone.addEventListener("change", onMoveZoneChange);
 
     // Zone pill (exits the zoomed-into-a-zone sub-state)
     el.zonePillClose.addEventListener("click", exitZoneZoom);
@@ -623,42 +636,67 @@
   }
 
   // A tap (not a drag) resolved against whatever was under the finger at
-  // pointerdown: an existing pin selects it; a region (or bare map background)
-  // opens the add-plant modal at that spot, zone auto-detected from the region.
+  // pointerdown. Zone-gated placement (2026-09-25): every plant lives in a
+  // zone, so a tap on the map is navigation first —
+  //   · a pin → selects it (as before)
+  //   · a zone, when no zone (or a different one) is selected → zooms to it
+  //     and selects it; nothing is placed
+  //   · inside the selected zone → opens the add-plant modal, zone known
+  //   · unzoned ground (house, drive, paths) → a quiet readout, nothing else
+  // Which zone a tap is "in" comes from zoneAtPoint(), not just the topmost
+  // shape, so a stone or boulder sitting inside a bed still counts as the bed.
   function onPlaceTap() {
     var target = place.downTarget, feet = place.downFeet;
     place.downTarget = null;
     if (!feet) return;
+    var isPin = !!(target && target.classList.contains("p-pin"));
 
-    // Reposition Mode: a plain tap (no drag) on a pin just selects it for
-    // the readout, same as Beat 2 — dragging is the only way to move it.
-    // Bare-ground/region taps do nothing here (no add-plant modal) since
-    // this mode is only about moving existing pins.
+    // Reposition Mode: a plain tap on a pin opens its move pill (zone picker
+    // + confirm/cancel). Taps anywhere else do nothing — this mode is only
+    // about moving existing pins.
     if (place.reposMode) {
-      if (target && target.classList.contains("p-pin")) selectIndividual(target.dataset.individualId);
+      if (isPin) openMoveFor(target.dataset.individualId);
       return;
     }
 
     if (place.logMode) {
-      if (target && target.classList.contains("p-pin")) {
-        openIndividualLog(target.dataset.individualId);
-        return;
-      }
-      if (target && target.classList.contains("p-region") && target.dataset.zoneId) {
-        zoomToZone(target.dataset.zoneId, { openModal: true });
-        return;
-      }
+      if (isPin) { openIndividualLog(target.dataset.individualId); return; }
+      var logZone = zoneAtPoint(feet.x, feet.y, target);
+      if (logZone) { zoomToZone(logZone, { openModal: true }); return; }
       showPlaceReadout("Nothing to log here yet.");
       return;
     }
 
-    // Log Mode off — Beat 2 behavior, unchanged.
-    if (target && target.classList.contains("p-pin")) {
-      selectIndividual(target.dataset.individualId);
+    if (isPin) { selectIndividual(target.dataset.individualId); return; }
+    var zoneId = zoneAtPoint(feet.x, feet.y, target);
+    if (!zoneId) { showPlaceReadout("Not part of a zone."); return; }
+    if (zoneId !== place.zoneZoomId) {
+      zoomToZone(zoneId, { openModal: false });
+      showPlaceReadout("Tap inside " + (state.names.zones[zoneId] || "the zone") + " to add a plant.");
       return;
     }
-    var zoneId = (target && target.dataset.zoneId) ? target.dataset.zoneId : null;
     openAddModal(feet, zoneId);
+  }
+
+  // The zone a map point belongs to: the topmost ZONED region whose fill
+  // contains it, in draw order (small features draw on top, so e.g. the
+  // Front Garden's brick bed wins over the lawn it sits inside). Unzoned
+  // toppings (stepping stones, boulders) are looked through. If the browser
+  // can't hit-test fills, falls back to whatever zoned shape was tapped.
+  function zoneAtPoint(x, y, target) {
+    if (!place.snapshot) return null;
+    var probe = place.regionEls[place.snapshot.regions[0] && place.snapshot.regions[0].id];
+    if (!probe || typeof probe.isPointInFill !== "function") {
+      return (target && target.dataset && target.dataset.zoneId) || null;
+    }
+    var regs = place.snapshot.regions;
+    for (var i = regs.length - 1; i >= 0; i--) {
+      var r = regs[i];
+      if (!r.zone_id) continue;
+      var shape = place.regionEls[r.id];
+      if (shape && pointInShape(shape, x, y)) return r.zone_id;
+    }
+    return null;
   }
 
   async function ensurePlaceLoaded() {
@@ -742,6 +780,7 @@
     var inds = await sage.listIndividuals();
     inds.forEach(function (ind) {
       placeIndCache[ind.id] = ind.label || (ind.taxon_id ? "plant" : "mystery plant");
+      place.pinZone[ind.id] = ind.zone_id || null;
       if (ind.map_x == null || ind.map_y == null) return;
       var pin = document.createElementNS(SVGNS, "circle");
       pin.setAttribute("cx", ind.map_x); pin.setAttribute("cy", ind.map_y); pin.setAttribute("r", "1.1");
@@ -867,7 +906,8 @@
     el.logModeBtn.setAttribute("aria-pressed", place.logMode ? "true" : "false");
     el.logModeLbl.textContent = place.logMode ? "Exit Log Mode" : "Log Mode";
     el.placeStage.toggleAttribute("data-logmode", place.logMode);
-    if (!place.logMode && place.zoneZoomId) exitZoneZoom();
+    // (2026-09-25: leaving Log Mode no longer drops the zoomed zone — zone
+    // selection is the default map's navigation too, so it carries across.)
     // Mutually exclusive with Reposition Mode — both hijack pin taps/drags.
     if (place.logMode && place.reposMode) toggleReposMode();
   }
@@ -880,6 +920,13 @@
   // is tapped. A plain tap on a pin (no drag) just selects it, same as
   // Beat 2 — see onPlaceTap. No data.js/schema change: map_x/map_y were
   // already writable fields, so this rides on the new moveIndividual().
+  // 2026-09-25 — zone-aware moves. Tapping a pin opens the move pill:
+  // "Move <name> → [zone ▾] ✓ ✕". The picker defaults to the pin's current
+  // zone, so a nudge is just select + drag. Picking another zone frames it
+  // and hops the pin to a spot inside it, then drag to refine. A pin dropped
+  // outside the chosen zone can't be confirmed (the pill says why). Confirm
+  // writes position + zone together, so a pin's zone always matches where it
+  // sits. Dragging a pin directly (no tap first) works as before.
   function toggleReposMode() {
     if (place.pendingMove) cancelPendingMove();
     place.reposMode = !place.reposMode;
@@ -887,53 +934,182 @@
     el.reposLbl.textContent = place.reposMode ? "Exit Reposition" : "Reposition";
     el.placeStage.toggleAttribute("data-reposmode", place.reposMode);
     if (place.reposMode && place.logMode) toggleLogMode();
+    // The move pill uses the zone pill's slot, so a zoomed zone lets go of
+    // its pill/arrows here (the view itself stays put).
+    if (place.reposMode && place.zoneZoomId) exitZoneZoom();
+    if (place.reposMode) showPlaceReadout("Tap a pin to move it, or drag it.");
+  }
+
+  // Starts (or reuses) the pending move for a pin. One pending move at a
+  // time: a different pin's unconfirmed move is reverted first.
+  function ensurePendingMove(id) {
+    var pm = place.pendingMove;
+    if (pm && pm.id === id) return pm;
+    if (pm) cancelPendingMove();
+    var pin = place.pins[id];
+    if (!pin) return null;
+    var x = parseFloat(pin.getAttribute("cx")), y = parseFloat(pin.getAttribute("cy"));
+    var cur = place.pinZone[id] || null;
+    place.pendingMove = {
+      id: id, pin: pin,
+      origX: x, origY: y, origZone: cur,
+      newX: x, newY: y,
+      zoneId: (cur && zoneHasGeometry(cur)) ? cur : "",
+    };
+    place.selectedIndividualId = id;
+    markPinSelected();
+    fillMoveZoneOptions(place.pendingMove.zoneId);
+    el.moveName.textContent = "Move " + individualReadoutName(id) + " →";
+    el.movePill.hidden = false;
+    return place.pendingMove;
+  }
+
+  function openMoveFor(id) {
+    var pm = ensurePendingMove(id);
+    if (pm) refreshMovePill();
   }
 
   function beginPinDrag() {
-    // Starting a fresh drag always resolves any move still awaiting confirm
-    // first (reverts it) — one pending move at a time, never orphaned.
-    if (place.pendingMove) cancelPendingMove();
-    var pin = place.pins[place.dragCandidateId];
-    if (!pin) { place.dragCandidateId = null; return; }
+    var pm = ensurePendingMove(place.dragCandidateId);
+    if (!pm) { place.dragCandidateId = null; return; }
     place.dragging = true;
-    place.dragOrig = { x: parseFloat(pin.getAttribute("cx")), y: parseFloat(pin.getAttribute("cy")) };
-    pin.classList.add("dragging");
+    place.dragOrig = { x: pm.origX, y: pm.origY };
+    pm.pin.classList.add("dragging");
+    refreshMovePill();
   }
 
   function finishPinDrag() {
-    var id = place.dragCandidateId;
-    var pin = place.pins[id];
-    if (!pin) return;
-    pin.classList.remove("dragging");
-    pin.classList.add("pending");
-    place.pendingMove = {
-      id: id, pin: pin,
-      origX: place.dragOrig.x, origY: place.dragOrig.y,
-      newX: parseFloat(pin.getAttribute("cx")), newY: parseFloat(pin.getAttribute("cy")),
-    };
-    el.movePill.hidden = false;
+    var pm = place.pendingMove;
+    if (!pm || pm.id !== place.dragCandidateId) return;
+    pm.pin.classList.remove("dragging");
+    pm.newX = parseFloat(pm.pin.getAttribute("cx"));
+    pm.newY = parseFloat(pm.pin.getAttribute("cy"));
+    refreshMovePill();
+  }
+
+  function onMoveZoneChange() {
+    var pm = place.pendingMove;
+    if (!pm) return;
+    var zid = el.moveZone.value;
+    pm.zoneId = zid;
+    if (zid) {
+      // Staying in (or returning to) the pin's own zone leaves the pin where
+      // it is; a new zone hops it inside, unless it's already there.
+      if (zoneAtPoint(pm.newX, pm.newY) !== zid) {
+        var spot = zoneDropPoint(zid);
+        if (spot) {
+          pm.newX = spot.x; pm.newY = spot.y;
+          pm.pin.setAttribute("cx", spot.x); pm.pin.setAttribute("cy", spot.y);
+        }
+      }
+      var bbox = zoneBBox(zid);
+      if (bbox) animatePlaceView(bbox);
+      markZoneSelected(zid);
+    } else {
+      markZoneSelected(null);
+    }
+    refreshMovePill();
+  }
+
+  // Pill state: ✓ only when something changed AND the pin sits inside the
+  // chosen zone. Pending styling whenever the pin is off its saved spot.
+  function refreshMovePill() {
+    var pm = place.pendingMove;
+    if (!pm) return;
+    var moved = pm.newX !== pm.origX || pm.newY !== pm.origY;
+    var rezoned = (pm.zoneId || null) !== (pm.origZone || null);
+    var warn = "";
+    if (!pm.zoneId) warn = "Choose a zone";
+    else if (zoneAtPoint(pm.newX, pm.newY) !== pm.zoneId) warn = "Outside " + (state.names.zones[pm.zoneId] || "that zone");
+    el.moveWarn.textContent = warn;
+    el.moveWarn.hidden = !warn;
+    el.moveConfirm.disabled = !!warn || !(moved || rezoned);
+    pm.pin.classList.toggle("pending", moved);
   }
 
   async function confirmPendingMove() {
     var pm = place.pendingMove;
-    if (!pm) return;
+    if (!pm || el.moveConfirm.disabled) return;
     el.moveConfirm.disabled = true;
-    await sage.moveIndividual(pm.id, { mapX: pm.newX, mapY: pm.newY });
-    el.moveConfirm.disabled = false;
+    var rezoned = pm.zoneId !== (pm.origZone || null);
+    try {
+      await sage.moveIndividual(pm.id, { mapX: pm.newX, mapY: pm.newY, zoneId: pm.zoneId });
+    } catch (err) {
+      el.moveWarn.textContent = "Couldn’t save the move. Try again.";
+      el.moveWarn.hidden = false;
+      el.moveConfirm.disabled = false;
+      return;
+    }
+    place.pinZone[pm.id] = pm.zoneId;
     pm.pin.classList.remove("pending");
     place.pendingMove = null;
     el.movePill.hidden = true;
-    showPlaceReadout("Pin moved.");
+    markZoneSelected(null);
+    showPlaceReadout(rezoned ? "Moved to " + (state.names.zones[pm.zoneId] || "new zone") + "." : "Pin moved.");
   }
 
+  // Reverts the pin to its saved spot. The view stays where it is (same
+  // never-snap-back rule as leaving a zone).
   function cancelPendingMove() {
     var pm = place.pendingMove;
     if (!pm) return;
     pm.pin.setAttribute("cx", pm.origX);
     pm.pin.setAttribute("cy", pm.origY);
-    pm.pin.classList.remove("pending");
+    pm.pin.classList.remove("pending", "dragging");
     place.pendingMove = null;
     el.movePill.hidden = true;
+    el.moveConfirm.disabled = false;
+    markZoneSelected(null);
+  }
+
+  // Zones that actually have shapes on the map, sorted by name the way a
+  // person reads them ("Zone B" before "Zone B1" before "Zone C").
+  function zonesWithGeometry() {
+    var seen = {};
+    (place.snapshot ? place.snapshot.regions : []).forEach(function (r) { if (r.zone_id) seen[r.zone_id] = true; });
+    return Object.keys(seen)
+      .map(function (id) { return { id: id, name: state.names.zones[id] || "Unnamed zone" }; })
+      .sort(function (a, b) { return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" }); });
+  }
+  function zoneHasGeometry(zid) {
+    return !!(place.snapshot && place.snapshot.regions.some(function (r) { return r.zone_id === zid; }));
+  }
+  function fillMoveZoneOptions(selected) {
+    el.moveZone.innerHTML = "";
+    if (!selected) {
+      var ph = document.createElement("option");
+      ph.value = ""; ph.textContent = "Choose zone…";
+      el.moveZone.appendChild(ph);
+    }
+    zonesWithGeometry().forEach(function (z) {
+      var o = document.createElement("option");
+      o.value = z.id; o.textContent = z.name;
+      el.moveZone.appendChild(o);
+    });
+    el.moveZone.value = selected || "";
+  }
+
+  // A spot guaranteed to count as inside zid (per zoneAtPoint): the zone's
+  // label anchor if that works, else the grid point nearest the middle of
+  // each member region (largest first) that does.
+  function zoneDropPoint(zid) {
+    var a = zoneLabelAnchor(zid);
+    if (a && zoneAtPoint(a.x, a.y) === zid) return a;
+    var regs = place.snapshot.regions
+      .filter(function (r) { return r.zone_id === zid && place.regionEls[r.id]; })
+      .map(function (r) { var b = place.regionEls[r.id].getBBox(); return { b: b, area: b.width * b.height }; })
+      .sort(function (p, q) { return q.area - p.area; });
+    for (var i = 0; i < regs.length; i++) {
+      var b = regs[i].b, cx = b.x + b.width / 2, cy = b.y + b.height / 2, best = null, bestD = Infinity, n = 12;
+      for (var sy = 1; sy < n; sy++) for (var sx = 1; sx < n; sx++) {
+        var px = b.x + (b.width * sx) / n, py = b.y + (b.height * sy) / n;
+        if (zoneAtPoint(px, py) !== zid) continue;
+        var dd = Math.hypot(px - cx, py - cy);
+        if (dd < bestD) { bestD = dd; best = { x: px, y: py }; }
+      }
+      if (best) return best;
+    }
+    return a;
   }
 
   async function openIndividualLog(id) {

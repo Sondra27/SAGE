@@ -164,11 +164,16 @@ function createSAGE(backend = MemoryBackend()) {
      * Reposition an existing Individual's pin (Place — drag-to-reposition).
      * Place owns the drag gesture and the pending/confirm UI; this just
      * persists the final map_x/map_y once the person confirms the move.
-     * No schema change — map_x/map_y were already writable fields.
+     * zoneId (2026-09-25, optional): Place writes position and zone together
+     * so a pin's zone record always matches where it sits. Left out entirely
+     * (undefined), zone_id is untouched — older callers keep working.
+     * No schema change — map_x/map_y/zone_id were already writable fields.
      * → the updated individual, or null if the id doesn't exist.
      */
-    async moveIndividual(id, { mapX, mapY } = {}) {
-      return db.update("individuals", id, { map_x: mapX, map_y: mapY, updated_at: nowISO() });
+    async moveIndividual(id, { mapX, mapY, zoneId } = {}) {
+      const patch = { map_x: mapX, map_y: mapY, updated_at: nowISO() };
+      if (zoneId !== undefined) patch.zone_id = zoneId;
+      return db.update("individuals", id, patch);
     },
 
     /**
