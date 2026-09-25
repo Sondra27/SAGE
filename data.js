@@ -41,6 +41,9 @@ function MemoryBackend(seed = {}) {
     taxa: [], zones: [], individuals: [], observations: [],
     sightings: [], weather: [], conditions: [], actions: [],
     photos: [], absences: [],
+    // 2026-09-25: species colours + pairings. Must match app.js BACKUP_TABLES,
+    // or Export backup refuses in Memory mode.
+    taxon_colours: [], taxon_pairings: [],
     // Singleton row — mirrors the seeded row-1 from the map_data migration so
     // Memory mode and Supabase behave identically from a fresh boot.
     map_data: [{ id: 1, snapshot: {}, updated_at: nowISO() }],

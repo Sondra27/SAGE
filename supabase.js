@@ -13,11 +13,25 @@
 // predicate, so here we read the whole table and filter in JS. At one-yard scale
 // that's correct and simple; RLS still gates every read. (If a table ever grew
 // huge, that single method is the place to push a filter down to Postgres.)
+//
+// Whole-table reads are PAGED (2026-09-25): Supabase returns at most 1,000 rows
+// per request by default, so a single read would silently truncate a big table
+// (and with it every backup). selectAll pages in a stable primary-key order
+// until a page comes back empty.
 // ============================================================================
 
 // Every table keys on `id` except weather (natural key `date`) and
 // taxon_pairings (primary key is the pair taxon_a + taxon_b).
 const KEY_COLUMN = { weather: "date", taxon_pairings: "taxon_a" };
+
+// Full primary key per table, for a stable page order (taxon_a alone isn't
+// unique in taxon_pairings).
+const ORDER_COLUMNS = { weather: ["date"], taxon_pairings: ["taxon_a", "taxon_b"] };
+
+// Rows asked for per request. Matches Supabase's default cap; if the project's
+// cap is ever set lower, paging still works because it advances by the rows
+// actually returned and only stops on an empty page.
+const PAGE_SIZE = 1000;
 
 export function SupabaseBackend(client) {
   const TABLES = [
@@ -28,9 +42,18 @@ export function SupabaseBackend(client) {
   const keyOf = (t) => KEY_COLUMN[t] || "id";
 
   async function selectAll(table) {
-    const { data, error } = await client.from(table).select("*");
-    if (error) throw new Error("select " + table + ": " + error.message);
-    return data || [];
+    const order = ORDER_COLUMNS[table] || ["id"];
+    const all = [];
+    for (let from = 0; ; ) {
+      let q = client.from(table).select("*");
+      for (const col of order) q = q.order(col, { ascending: true });
+      const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+      if (error) throw new Error("select " + table + ": " + error.message);
+      if (!data || !data.length) break;
+      all.push(...data);
+      from += data.length;
+    }
+    return all;
   }
 
   return {
