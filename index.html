@@ -45,7 +45,6 @@
       --mono:  "Aptos","Carlito",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
 
       --pad: clamp(16px, 4vw, 32px);
-      --sheet-max: 1400px;
 
       /* Material palette (baked 2026-07-01) — the ONLY other place saturated-
          adjacent color lives; still earth/stone tones, not chrome accents. */
@@ -78,7 +77,7 @@
        measure against and fell back to its intrinsic viewBox aspect ratio,
        which is the actual root cause of the map rendering ~843×1568px. */
     .sheet {
-      max-width: var(--sheet-max);
+      width: 100%;
       height: 100dvh;
       margin: 0 auto;
       display: flex;
@@ -198,10 +197,10 @@
     .p-pin.dragging { cursor: grabbing; filter: drop-shadow(0 0 3px var(--sage)); }
     .p-pin.pending { stroke: var(--sage); stroke-width: .6; stroke-dasharray: .3 .25; }
 
-    .p-toolbar { position: absolute; left: 14px; top: 12px; display: flex; gap: 8px; pointer-events: none; }
+    .p-toolbar { position: absolute; left: 14px; top: 12px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
     .p-logbtn {
-      pointer-events: auto; cursor: pointer;
-      display: flex; align-items: center; gap: 7px; padding: 8px 13px; font-family: var(--mono);
+      pointer-events: auto; cursor: pointer; height: 34px; box-sizing: border-box;
+      display: flex; align-items: center; gap: 7px; padding: 0 13px; font-family: var(--mono);
       font-size: 11px; letter-spacing: .08em; text-transform: uppercase;
       background: var(--ground-2); color: var(--ink); border: 1px solid var(--line); border-radius: 20px;
     }
@@ -428,14 +427,21 @@
        detail) rather than one long page scroll — align-items:stretch (not
        start) so both columns actually fill the row and can scroll within
        their own bounds. */
-    .desk-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 260px) 1fr; gap: 28px; align-items: stretch; overflow: hidden; }
+    .desk-body {
+      flex: 1; min-height: 0; display: grid;
+      grid-template-columns: minmax(200px, 260px) 1fr; grid-template-rows: minmax(0, 1fr);
+      gap: 28px; align-items: stretch; overflow: hidden;
+    }
     @media (max-width: 640px) {
       .desk-body { grid-template-columns: 1fr; }
       /* On a phone, two nested independent scroll areas stacked vertically
          is a worse feel than one plain scroll — let the whole panel scroll
-         together instead. */
+         together instead. Also reset the desktop row-forcing rule above:
+         on a single stacked column each pane needs its own natural
+         (auto) height, not to be squeezed into one fr-row meant for a
+         two-column layout. */
       .desk { overflow-y: auto; }
-      .desk-body { overflow: visible; }
+      .desk-body { flex: none; grid-template-rows: none; overflow: visible; }
       .plant-list, .timeline-pane { overflow: visible; }
       /* On a phone the subnav tab + mode toggle already say what surface
          you're on — this eyebrow ("Field · Place") is redundant there. */
