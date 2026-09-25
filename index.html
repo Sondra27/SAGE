@@ -88,6 +88,13 @@
       border-right: 1px solid var(--line);
       box-shadow: 0 0 0 1px var(--frame) inset;
       animation: sheet-in .5s ease both;
+      /* iPhone safe areas (viewport-fit=cover lets the page run under the
+         clock/notch and home indicator): pad the shell by the insets so the
+         app bar and footer sit clear of them. border-box keeps the total at
+         exactly 100dvh. Insets are 0 on desktop, so nothing moves there. */
+      box-sizing: border-box;
+      padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px)
+               env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
     }
     @keyframes sheet-in { from { opacity: 0; } to { opacity: 1; } }
 
@@ -133,7 +140,7 @@
     .subnav button {
       appearance: none; cursor: pointer; background: transparent;
       font-family: var(--mono); font-size: 12px; letter-spacing: .12em; text-transform: uppercase;
-      padding: 7px 13px; color: var(--ink-dim); border: 1px dashed var(--line); border-radius: 2px;
+      padding: 7px 13px; color: var(--ink-dim); border: 1px solid var(--line); border-radius: 2px;
       transition: color .15s ease, border-color .15s ease;
     }
     .subnav button:hover { color: var(--ink); }
@@ -486,6 +493,13 @@
       /* On a phone the subnav tab + mode toggle already say what surface
          you're on — this eyebrow ("Field · Place") is redundant there. */
       .place-head .eyebrow, .cap-head .eyebrow, .desk-head .eyebrow { display: none; }
+      /* Map toolbar breathing room: at phone width the Log Mode / Reposition
+         pills + gear ran right up against the north arrow. Tighten the pills
+         (padding, letter-spacing, gap) and trim the compass slightly so the
+         two clear each other, including with the longer "Exit…" labels. */
+      .p-toolbar { gap: 6px; }
+      .p-logbtn { padding: 0 10px; gap: 6px; letter-spacing: .04em; }
+      .p-compass { width: 44px; height: 44px; top: 14px; right: 10px; }
     }
 
     .plant-list { display: flex; flex-direction: column; gap: 8px; min-height: 0; overflow-y: auto; }
