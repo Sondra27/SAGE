@@ -48,6 +48,7 @@
     importConfirm: byId("place-import-confirm"), importConfirmMsg: byId("place-import-confirm-msg"),
     importConfirmYes: byId("place-import-confirm-yes"), importConfirmNo: byId("place-import-confirm-no"),
     importZonesNote: byId("place-import-zones-note"), exportBtn: byId("place-export-btn"),
+    labelsBtn: byId("place-labels-btn"), labelsLbl: byId("place-labels-lbl"),
 
     // Add plant modal
     addModal: byId("add-modal"), closeAdd: byId("close-add"), cancelAdd: byId("cancel-add"),
@@ -68,6 +69,12 @@
     zoneArrows: {
       up: byId("place-zone-up"), down: byId("place-zone-down"),
       left: byId("place-zone-left"), right: byId("place-zone-right"),
+    },
+    // Arrow target-name pills (2026-09-25): one per direction, kept in sync
+    // with zoneArrows' hidden/disabled state in updateZoneArrows().
+    zoneArrowNames: {
+      up: byId("place-zone-up-name"), down: byId("place-zone-down-name"),
+      left: byId("place-zone-left-name"), right: byId("place-zone-right-name"),
     },
 
     // Zone modal (Log Mode: action + condition)
@@ -117,6 +124,11 @@
     // it used to open the add-plant modal). pinZone: each pin's zone_id, as
     // loaded — the reposition pill defaults to it.
     pinched: false, pinZone: {},
+    // Zone labels (2026-09-25 declutter pass): off by default every load —
+    // the bottom zone pill + arrow name-pills cover everyday navigation, so
+    // in-map labels are an occasional reference toggle, not always-on. Not
+    // persisted across reloads, same as logMode/reposMode above.
+    showZoneLabels: false,
   };
 
   main().catch(function (err) {
@@ -491,6 +503,7 @@
     el.importConfirmYes.addEventListener("click", onConfirmMapImport);
     el.importConfirmNo.addEventListener("click", hideImportConfirm);
     el.exportBtn.addEventListener("click", onExportBackup);
+    el.labelsBtn.addEventListener("click", toggleZoneLabels);
 
     // Map data tools: the gear opens/closes a small panel (Map + Backup).
     // Never gated on state (standing admin-control rule).
@@ -794,17 +807,28 @@
     renderZoneLabels(); // must run last: labels are appended after pins so they paint on top
   }
 
-  // Zone name labels — always on, one per zone, appended after pins so they
-  // paint on top. Anchor point is picked per-zone (not a naive union-bbox
-  // center): the largest member region is preferred, and its bbox-center is
-  // verified with isPointInFill() so a concave/odd-shaped bed doesn't strand
-  // the label in empty space between regions. Falls back to a small grid
-  // search within that region if its exact center happens to miss the fill.
+  // Zone name labels — OFF by default (2026-09-25 declutter pass; previously
+  // always-on). Toggled via the gear panel's "Show zone labels" button so
+  // they're an occasional reference lookup rather than always-on map text;
+  // the bottom zone pill (selected zone) and arrow name-pills (neighbours)
+  // cover everyday navigation without them. When on, one label per zone is
+  // appended after pins so they paint on top. Anchor point is picked
+  // per-zone (not a naive union-bbox center): the largest member region is
+  // preferred, and its bbox-center is verified with isPointInFill() so a
+  // concave/odd-shaped bed doesn't strand the label in empty space between
+  // regions. Falls back to a small grid search within that region if its
+  // exact center happens to miss the fill.
   var ZONE_LABEL_PX = 11; // adjust if this reads too big/small on the phone
+  function toggleZoneLabels() {
+    place.showZoneLabels = !place.showZoneLabels;
+    el.labelsBtn.setAttribute("aria-pressed", String(place.showZoneLabels));
+    renderZoneLabels();
+  }
   function renderZoneLabels() {
     Object.values(place.zoneLabelEls || {}).forEach(function (t) { t.remove(); });
     place.zoneLabelEls = {};
     place.zoneLabelPos = {};
+    if (!place.showZoneLabels) return;
     if (!place.snapshot) return;
     var zoneIds = {};
     place.snapshot.regions.forEach(function (r) { if (r.zone_id) zoneIds[r.zone_id] = true; });
@@ -1223,18 +1247,31 @@
     return best;
   }
 
+  var ZONE_ARROW_WORD = { up: "north", down: "south", left: "west", right: "east" };
   function updateZoneArrows() {
     if (!place.zoneZoomId) { hideZoneArrows(); return; }
     Object.keys(el.zoneArrows).forEach(function (dir) {
       var target = nearestInDirection(place.zoneZoomId, dir);
+      var targetName = target ? (state.names.zones[target] || "") : "";
       var btn = el.zoneArrows[dir];
       btn.hidden = false;
       btn.disabled = !target;
       btn.dataset.targetZone = target || "";
+      btn.setAttribute("aria-label", targetName ? "Zone " + ZONE_ARROW_WORD[dir] + ": " + targetName : "Zone " + ZONE_ARROW_WORD[dir]);
+      // Name pill: shown whenever its arrow is (i.e. a target exists);
+      // hidden right alongside it when there's nothing that direction.
+      var tag = el.zoneArrowNames[dir];
+      if (tag) {
+        tag.hidden = !targetName;
+        tag.textContent = targetName;
+      }
     });
   }
   function hideZoneArrows() {
-    Object.keys(el.zoneArrows).forEach(function (dir) { el.zoneArrows[dir].hidden = true; });
+    Object.keys(el.zoneArrows).forEach(function (dir) {
+      el.zoneArrows[dir].hidden = true;
+      if (el.zoneArrowNames[dir]) el.zoneArrowNames[dir].hidden = true;
+    });
   }
 
   // ── Place: Zone modal (Log Mode) ────────────────────────────────────────────────

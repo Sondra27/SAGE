@@ -258,6 +258,13 @@
     .p-gearmenu .btn-ghost { width: 100%; padding: 11px 14px; font-size: 12px; }
     .p-gearmenu .btn-ghost:disabled { opacity: .45; cursor: not-allowed; }
     .p-gearmenu .btn-ghost:disabled:hover { color: var(--ink-dim); border-color: var(--line); }
+    /* Show zone labels: a persistent on/off toggle (not a momentary action
+       like Import/Export), so it gets the dot-indicator treatment used by
+       the toolbar's Log Mode / Reposition buttons rather than btn-ghost's
+       plain-button look. Off by default each load (2026-09-25). */
+    .p-gearmenu .btn-toggle { display: flex; align-items: center; gap: 8px; justify-content: flex-start; }
+    .p-gearmenu .btn-toggle .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-dim); flex: none; }
+    .p-gearmenu .btn-toggle[aria-pressed="true"] .dot { background: var(--sage); }
     .p-gearnote { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--ink-dim); }
     .p-gearnote[hidden] { display: none; }
     /* Inline two-click confirm for the destructive map replace. Clay is the
@@ -343,6 +350,27 @@
     .p-zonearrow.dir-up    { top: 56px; left: 50%; transform: translateX(-50%); }
     .p-zonearrow.dir-down  { bottom: 56px; left: 50%; transform: translateX(-50%); }
     .p-zonearrow.dir-left  { left: 14px; top: 50%; transform: translateY(-50%); }
+
+    /* Arrow target-name pills (2026-09-25): a small label naming the zone
+       each visible arrow would jump to, so you know where you'd land before
+       tapping — without needing an always-on in-map label for that
+       neighbouring zone. Sits on the map-ward side of its arrow (toward
+       center), never the outward side. pointer-events: none so it never
+       steals the arrow's own tap target. Mirrors updateZoneArrows()'s
+       hidden/disabled state exactly (empty target = hidden, same as the
+       arrow being disabled). */
+    .p-zonearrow-name {
+      position: absolute; pointer-events: none; z-index: 5; box-sizing: border-box;
+      max-width: 92px; padding: 2px 9px; border-radius: 10px; overflow: hidden;
+      background: var(--ground-2); border: 1px solid var(--line);
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase;
+      color: var(--ink-dim); white-space: nowrap; text-overflow: ellipsis;
+    }
+    .p-zonearrow-name[hidden] { display: none; }
+    .p-zonearrow-name.dir-up    { top: 98px; left: 50%; transform: translateX(-50%); }
+    .p-zonearrow-name.dir-down  { bottom: 98px; left: 50%; transform: translateX(-50%); }
+    .p-zonearrow-name.dir-left  { left: 56px; top: 50%; transform: translateY(-50%); }
+    .p-zonearrow-name.dir-right { right: 56px; top: 50%; transform: translateY(-50%); }
     .p-zonearrow.dir-right { right: 14px; top: 50%; transform: translateY(-50%); }
 
     /* Zone selection highlight: the zoomed-into zone's own regions get a
@@ -652,6 +680,9 @@
                   <button id="place-import-zones-btn" class="btn-ghost" type="button">Import zones</button>
                   <input type="file" id="place-import-zones-file" accept="application/json,.json" hidden />
                   <p class="p-gearnote" id="place-import-zones-note" hidden>Needs a map first. Import map data above, then sync zones.</p>
+                  <button id="place-labels-btn" class="btn-ghost btn-toggle" type="button" aria-pressed="false">
+                    <span class="dot"></span><span id="place-labels-lbl">Show zone labels</span>
+                  </button>
                 </div>
                 <div class="p-gearsec">
                   <div class="p-gearhead">Backup</div>
@@ -672,9 +703,13 @@
                 <span class="move-warn" id="place-move-warn" role="status" aria-live="polite" hidden></span>
               </div>
               <button class="p-zonearrow dir-up"    id="place-zone-up"    type="button" aria-label="Zone north" hidden>↑</button>
+              <span class="p-zonearrow-name dir-up" id="place-zone-up-name" hidden aria-hidden="true"></span>
               <button class="p-zonearrow dir-down"  id="place-zone-down"  type="button" aria-label="Zone south" hidden>↓</button>
+              <span class="p-zonearrow-name dir-down" id="place-zone-down-name" hidden aria-hidden="true"></span>
               <button class="p-zonearrow dir-left"  id="place-zone-left"  type="button" aria-label="Zone west"  hidden>←</button>
+              <span class="p-zonearrow-name dir-left" id="place-zone-left-name" hidden aria-hidden="true"></span>
               <button class="p-zonearrow dir-right" id="place-zone-right" type="button" aria-label="Zone east"  hidden>→</button>
+              <span class="p-zonearrow-name dir-right" id="place-zone-right-name" hidden aria-hidden="true"></span>
               <svg class="p-ov p-compass" viewBox="0 0 64 64" id="place-compass" aria-hidden="true">
                 <g class="rose">
                   <circle cx="32" cy="32" r="22" fill="none" stroke="currentColor" stroke-width="1" opacity=".5"/>
